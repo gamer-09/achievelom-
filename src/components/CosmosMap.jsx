@@ -25,11 +25,11 @@ const SPECT_COLOR = {
 }
 
 function starSize(mag) {
-  if (mag <= 1.2) return 1.7
-  if (mag <= 2.5) return 1.3
-  if (mag <= 4.0) return 0.9
-  if (mag <= 5.5) return 0.65
-  return 0.5
+  if (mag <= 1.2) return 2.6
+  if (mag <= 2.5) return 2.2
+  if (mag <= 4.0) return 1.8
+  if (mag <= 5.5) return 1.4
+  return 1.0
 }
 
 // ── the four views ───────────────────────────────────────────
@@ -84,11 +84,10 @@ function MilkyWayView({ selected, setSelected, setHover }) {
       objects={objects}
       range={95}
       unit="1 world unit = 1,000 light-years"
-      view={{ rotY: -38, rotX: 26, k: 1 }}
+      view={{ rotY: -38, rotX: 26, k: 1.6 }}
       onSelect={setSelected}
       selected={selected}
-      onHover={setHover}
-      hint="The Milky Way, drawn from real measurements: 5,187 stars with true 3D positions (HYG), 156 real globular clusters (Harris catalog), the Sun, and the galactic center. Zoom into the heart to see our stellar neighbourhood."
+      hint="The Milky Way, drawn from real measurements: 5,187 stars with true 3D positions (HYG), 156 real globular clusters (Harris catalog), the Sun, and the galactic center. Click the Sun or any star to fly in — the nearest stars separate beautifully once you zoom."
     />
   )
 }
@@ -115,10 +114,9 @@ function LocalGroupView({ selected, setSelected, setHover }) {
       objects={objects}
       range={4200}
       unit="1 world unit = 1,000 light-years"
-      view={{ rotY: -40, rotX: 18, k: 1 }}
+      view={{ rotY: -40, rotX: 18, k: 1.2 }}
       onSelect={setSelected}
       selected={selected}
-      onHover={setHover}
       hint="The Local Group — our archipelago of galaxies, drawn to true distances (from Karachentsev & the extragalactic literature). Two great spirals, the Milky Way and Andromeda, drift toward a collision 4.5 billion years from now."
     />
   )
@@ -172,12 +170,11 @@ function UniverseView({ selected, setSelected, setHover }) {
   return (
     <Cosmos3D
       objects={objects}
-      range={4600}
+      range={12000}
       unit="1 world unit = 3.26 million light-years"
-      view={{ rotY: -20, rotX: 30, k: 1 }}
+      view={{ rotY: -25, rotX: 30, k: 2 }}
       onSelect={setSelected}
       selected={selected}
-      onHover={setHover}
       hint="The observable universe, built from 4,824 real galaxies of the 2dF Galaxy Redshift Survey — a true slice of the cosmic web, each dot a galaxy at its measured distance (redshift → distance, H₀ = 70). Near galaxies glow blue; the farthest burn orange, out to the microwave glow of creation."
     />
   )
