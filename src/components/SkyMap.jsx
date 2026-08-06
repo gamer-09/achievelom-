@@ -190,7 +190,7 @@ const MapLayers = memo(function MapLayers(props) {
             if (!s[6] || !starLabelVisible(s[3])) return null
             return (
               <text
-                key={s[0] || (s[1] + s[2] + s[6])}
+                key={s[0] || s[1] + "_" + s[2] + "_" + s[6] + "_" + s[3]}
                 x={s[1]} y={s[2] - sw(s[3] <= 1 ? 6 : 8)}
                 textAnchor="middle" fontSize={fs(s[3] <= 1 ? 9.5 : 8)}
                 fill="rgba(233,220,192,0.85)"
@@ -205,8 +205,8 @@ const MapLayers = memo(function MapLayers(props) {
 
       {showConstLabels && (
         <g>
-          {constellations.map((c) => (
-            <text key={c.id} x={c.center[0]} y={c.center[1]} textAnchor="middle" fontSize={fs(10)} fill="rgba(212,175,55,0.65)" style={{ fontFamily: `'Cinzel', serif`, letterSpacing: '0.12em' }}>
+          {constellations.map((c, ci) => (
+            <text key={`${c.id}-${ci}`} x={c.center[0]} y={c.center[1]} textAnchor="middle" fontSize={fs(10)} fill="rgba(212,175,55,0.65)" style={{ fontFamily: `'Cinzel', serif`, letterSpacing: '0.12em' }}>
               {c.name.toUpperCase()}
             </text>
           ))}

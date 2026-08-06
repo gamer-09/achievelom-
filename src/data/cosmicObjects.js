@@ -17,7 +17,6 @@ export const COSMIC = {
     { name: 'SS 433', id: 'ss433', ra: 287.957, dec: 4.983, mass: '≈ 10 Suns', dist: '18,000 ly', type: 'Microquasar', year: 'Discovered 1977', fact: 'Its twin jets precess like a wobbling lighthouse, sweeping the sky — a cosmic spectacle observed in visible light, X-rays and radio.' },
     { name: 'TON 618', id: 'ton618', ra: 187.104, dec: 31.527, mass: '66 billion Suns (one estimate)', dist: '10.4 billion ly', type: 'Ultramassive black hole · quasar', year: 'Noted 1957', fact: 'One of the most massive black holes known — a quasar whose accretion disk outshines entire galaxies.' },
     { name: 'GW150914', id: 'gw150914', ra: 197.5, dec: -47.2, mass: '62 Suns (merged)', dist: '1.3 billion ly', type: 'Black-hole merger (gravitational waves)', year: 'Detected 14 Sep 2015', fact: 'The first gravitational wave ever detected — two black holes, 36 and 29 Suns, spiralling together and ringing space itself.' },
-    { name: '1A 0620-00', id: 'dup', ra: 95.62, dec: -0.345, mass: '', dist: '', type: '', year: '', fact: '' },
   ],
   pulsars: [
     { name: 'Crab Pulsar', id: 'crabpsr', ra: 83.633, dec: 22.014, period: '33 ms', dist: '6,500 ly', type: 'Neutron star', year: 'Discovered 1968', fact: 'The heart of the Crab Nebula (M1) — the collapsed core of the supernova seen by Chinese astronomers in 1054, spinning 30 times a second.' },

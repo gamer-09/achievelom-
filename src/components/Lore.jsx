@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { CONSTELLATIONS, SAGES, GLOSSARY } from '../data/lore.js'
 
 function ConstellationMap({ c }) {
-  const max = (arr, f) => Math.max(...arr.map(f))
-  const min = (arr, f) => Math.min(...arr.map(f))
+  const max = (arr, f = (p) => p) => Math.max(...arr.map(f))
+  const min = (arr, f = (p) => p) => Math.min(...arr.map(f))
   const xs = c.points.map((p) => p[0])
   const ys = c.points.map((p) => p[1])
   const xmin = min(xs), xmax = max(xs)
