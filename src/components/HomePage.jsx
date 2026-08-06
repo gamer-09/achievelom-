@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { fetchApod, fetchNews, formatDate } from '../api/news.js'
+import { FALLBACK_NEWS } from '../data/fallbackNews.js'
 import { ALMANAC } from '../data/lore.js'
 
 const ATLAS_CHIPS = [
@@ -28,6 +29,12 @@ export default function HomePage({ navigate }) {
 
   useEffect(() => {
     let alive = true
+    const t = setTimeout(() => {
+      // safety net: if the heavens are unreachable, stop the wait after 15s
+      alive && setApod({ title: null, explanation: null, image: null, cached: false, fallback: true })
+      alive && setNews((n) => (n.length ? n : FALLBACK_NEWS))
+      alive && setNewsBadge((b) => b || 'archival scroll')
+    }, 15000)
     fetchApod().then((a) => alive && setApod(a))
     fetchNews().then((r) => {
       if (!alive) return
@@ -36,6 +43,7 @@ export default function HomePage({ navigate }) {
     })
     return () => {
       alive = false
+      clearTimeout(t)
     }
   }, [])
 

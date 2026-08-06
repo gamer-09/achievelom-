@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { fetchNews, formatDate } from '../api/news.js'
+import { FALLBACK_NEWS } from '../data/fallbackNews.js'
 
 export default function Chronicles() {
   const [articles, setArticles] = useState(null)
@@ -12,8 +13,14 @@ export default function Chronicles() {
       setArticles(r.articles)
       setState(r.fallback ? 'error' : 'ready')
     })
+    const t = setTimeout(() => {
+      if (!alive) return
+      setArticles(FALLBACK_NEWS)
+      setState('error')
+    }, 15000)
     return () => {
       alive = false
+      clearTimeout(t)
     }
   }, [])
 
