@@ -119,6 +119,81 @@ export function planetPosition(planet, dateStr) {
   }
 }
 
+// ── small bodies (asteroids, dwarf planets, comets) ─────────
+// el: elements from JPL SBDB — {e, i, om, w, ma, tp, a, q, epoch}
+// Returns heliocentric {lon, lat, r} and geocentric RA/Dec.
+export function smallBodyHelio(el, dateStr) {
+  const jd = dateToJD(dateStr)
+  const epoch = parseFloat(el.epoch) || 2451545.0
+  const e = parseFloat(el.e) || 0
+  const i = parseFloat(el.i) || 0
+  const om = parseFloat(el.om) || 0
+  const w = parseFloat(el.w) || 0
+  const a = parseFloat(el.a) || (parseFloat(el.q) / (1 - e) || 0)
+  const q = parseFloat(el.q) || a * (1 - e)
+  let M
+  if (el.tp) {
+    // mean anomaly from perihelion time
+    const n = 0.9856076686 / Math.pow(a, 1.5) // deg/day (Kepler III)
+    M = norm360(n * (jd - parseFloat(el.tp)))
+  } else if (el.ma != null) {
+    const n = el.n ? parseFloat(el.n) : 0.9856076686 / Math.pow(a, 1.5)
+    M = norm360(parseFloat(el.ma) + n * (jd - epoch))
+  } else {
+    M = 0
+  }
+  // solve Kepler
+  let E = M + (e * R2D) * Math.sin(M * D2R)
+  for (let k = 0; k < 8; k++) E = M + e * R2D * Math.sin(E * D2R)
+  const xv = a * (Math.cos(E * D2R) - e)
+  const yv = a * Math.sqrt(1 - e * e) * Math.sin(E * D2R)
+  const v = Math.atan2(yv, xv) * R2D
+  const r = Math.sqrt(xv * xv + yv * yv)
+  const arg = v + w
+  const lon = norm360(arg + om)
+  const lat = Math.asin(Math.sin(arg * D2R) * Math.sin(i * D2R)) * R2D
+  return { lon, lat, r }
+}
+
+export function smallBodyPosition(el, dateStr) {
+  const p = smallBodyHelio(el, dateStr)
+  const e = helio('earth', (dateToJD(dateStr) - 2451545.0) / 36525)
+  const toRect = (h) => {
+    const c = Math.cos(h.lat * D2R)
+    return {
+      x: h.r * Math.cos(h.lon * D2R) * c,
+      y: h.r * Math.sin(h.lon * D2R) * c,
+      z: h.r * Math.sin(h.lat * D2R),
+    }
+  }
+  const P = toRect(p)
+  const E = toRect(e)
+  const xg = P.x - E.x
+  const yg = P.y - E.y
+  const zg = P.z - E.z
+  const distAU = Math.sqrt(xg * xg + yg * yg + zg * zg)
+  const lon = Math.atan2(yg, xg) * R2D
+  const lat = Math.atan2(zg, Math.sqrt(xg * xg + yg * yg)) * R2D
+  const eq = eclToEq(norm360(lon), lat)
+  return {
+    ...eq,
+    distAU,
+    lightMin: distAU * 8.3167,
+    helioLon: p.lon,
+    helioLat: p.lat,
+    helioR: p.r,
+  }
+}
+
+// Ecliptic position of a probe from heliocentric ecliptic vector
+export function vectorToEcl(vec) {
+  const r = Math.sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z)
+  let lon = Math.atan2(vec.y, vec.x) * R2D
+  if (lon < 0) lon += 360
+  const lat = Math.atan2(vec.z, Math.sqrt(vec.x * vec.x + vec.y * vec.y)) * R2D
+  return { lon, lat, r }
+}
+
 // Geocentric Sun (from Earth's heliocentric position)
 export function sunPosition(dateStr) {
   const jd = dateToJD(dateStr)

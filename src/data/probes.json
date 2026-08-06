@@ -1,0 +1,112 @@
+[
+ {
+  "name": "JUICE",
+  "x": 1.091104134008392,
+  "y": -0.7358311973535339,
+  "z": -0.002301774973617284,
+  "r": 1.316,
+  "lon": 326.0,
+  "lat": -0.1,
+  "note": "Launched 2023 \u00b7 ESA's explorer bound for Jupiter's icy moons (arrives 2031)",
+  "epoch": "2026-08-06"
+ },
+ {
+  "name": "Europa Clipper",
+  "x": 0.2777939802998823,
+  "y": -1.215922612014762,
+  "z": -0.0232453927760235,
+  "r": 1.247,
+  "lon": 282.9,
+  "lat": -1.1,
+  "note": "Launched 2024 \u00b7 en route to Jupiter to study the ocean moon Europa (arrives 2030)",
+  "epoch": "2026-08-06"
+ },
+ {
+  "name": "New Horizons",
+  "x": 20.67547553679958,
+  "y": -61.8718179092853,
+  "z": 2.274618726214309,
+  "r": 65.275,
+  "lon": 288.5,
+  "lat": 2.0,
+  "note": "Launched 2006 \u00b7 flew past Pluto (2015) & Arrokoth (2019) \u00b7 now in the Kuiper belt",
+  "epoch": "2026-08-06"
+ },
+ {
+  "name": "Voyager 1",
+  "x": -32.09606688329397,
+  "y": -136.3843705550876,
+  "z": 98.67723145836325,
+  "r": 171.371,
+  "lon": 256.8,
+  "lat": 35.2,
+  "note": "Launched 1977 \u00b7 now in interstellar space \u00b7 humanity's most distant object",
+  "epoch": "2026-08-06"
+ },
+ {
+  "name": "Voyager 2",
+  "x": 39.75432199355959,
+  "y": -105.1622517929241,
+  "z": -89.33728336682981,
+  "r": 143.599,
+  "lon": 290.7,
+  "lat": -38.5,
+  "note": "Launched 1977 \u00b7 only spacecraft to visit Uranus & Neptune \u00b7 now interstellar",
+  "epoch": "2026-08-06"
+ },
+ {
+  "name": "Pioneer 10",
+  "x": 24.03138630049217,
+  "y": 139.2964156246888,
+  "z": 7.372916364055796,
+  "r": 141.546,
+  "lon": 80.2,
+  "lat": 3.0,
+  "note": "Launched 1972 \u00b7 first through the asteroid belt & past Jupiter \u00b7 now silent",
+  "epoch": "2026-08-06"
+ },
+ {
+  "name": "Pioneer 11",
+  "x": 28.95642289493894,
+  "y": -110.4419291782266,
+  "z": 28.1505688715769,
+  "r": 117.594,
+  "lon": 284.7,
+  "lat": 13.9,
+  "note": "Launched 1973 \u00b7 first to visit Saturn \u00b7 now silent, heading toward Sagittarius",
+  "epoch": "2026-08-06"
+ },
+ {
+  "name": "Parker Solar Probe",
+  "x": 0.6050920715413284,
+  "y": -0.3027682948652671,
+  "z": -0.03905523842855534,
+  "r": 0.678,
+  "lon": 333.4,
+  "lat": -3.3,
+  "note": "Launched 2018 \u00b7 flying through the Sun's corona \u2014 the fastest human object",
+  "epoch": "2026-08-06"
+ },
+ {
+  "name": "James Webb Space Telescope",
+  "x": 0.6966741809417812,
+  "y": -0.749517033414158,
+  "z": -0.0001668294977249888,
+  "r": 1.023,
+  "lon": 312.9,
+  "lat": -0.0,
+  "note": "Launched 2021 \u00b7 orbiting the L2 point, 1.5M km from Earth \u2014 the great eye of our age",
+  "epoch": "2026-08-06"
+ },
+ {
+  "name": "Juno",
+  "x": -3.151772418391214,
+  "y": 4.236678506465887,
+  "z": 0.0422201701604275,
+  "r": 5.281,
+  "lon": 126.6,
+  "lat": 0.5,
+  "note": "Launched 2011 \u00b7 orbiting Jupiter since 2016, mapping its storms and deep interior",
+  "epoch": "2026-08-06"
+ }
+]

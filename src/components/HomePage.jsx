@@ -16,9 +16,9 @@ const ATLAS_CHIPS = [
 const REAL_STATS = [
   { n: '9,027', l: 'real stars on the chart' },
   { n: '110', l: 'Messier deep-sky wonders' },
-  { n: '8', l: 'wanderers in true positions' },
-  { n: '11', l: 'meteor showers mapped' },
-  { n: '88', l: 'constellations drawn' },
+  { n: '58', l: 'black holes, pulsars & quasars' },
+  { n: '22', l: 'dwarf planets, asteroids & comets' },
+  { n: '10', l: 'spacecraft in true positions' },
 ]
 
 export default function HomePage({ navigate }) {

@@ -2,19 +2,20 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import starsJson from '../data/stars.json'
 import messierJson from '../data/messier.json'
 import constellationsJson from '../data/constellations.json'
+import smallbodiesJson from '../data/smallbodies.json'
 import { SHOWERS } from '../data/showers.js'
+import { COSMIC, SPECIAL_LAYERS, flattenCosmic } from '../data/cosmicObjects.js'
 import {
-  allBodies, eclipticPath, milkyWayPath, formatRA, formatDec, todayUTC,
+  allBodies, eclipticPath, milkyWayPath, formatRA, formatDec, todayUTC, smallBodyPosition,
 } from '../astro/ephemeris.js'
 
 // ── constants ────────────────────────────────────────────────
-const W = 360 // world width  (RA 0..360)
-const H = 180 // world height (Dec -90..90)
-const FACTOR = 2.8 // css px per world unit at zoom k=1 (approx)
+const W = 360
+const H = 180
+const FACTOR = 2.8
 const MIN_K = 0.8
 const MAX_K = 320
 
-// star glyph: screen px per magnitude bucket
 const MAG_PX = [
   { max: 1.2, px: 3.6 },
   { max: 2.2, px: 3.0 },
@@ -41,10 +42,38 @@ const BODY_STYLE = {
   neptune: { color: '#5a8fc9', r: 3.0, name: 'Neptune' },
 }
 
+// facts for the moving small bodies
+const SB_FACTS = {
+  Ceres: ['1 Ceres', 'The first asteroid found (1801) — now classed a dwarf planet, 940 km across, the largest of the main-belt worlds.'],
+  Vesta: ['4 Vesta', 'The brightest asteroid — 525 km wide, with a giant impact basin at its south pole; NASA\'s Dawn orbited it 2011–2012.'],
+  Pallas: ['2 Pallas', 'The second asteroid ever found (1802) — an odd, tilted orbit and possibly the remnant of a disrupted protoplanet.'],
+  Hygiea: ['10 Hygiea', 'The fourth-largest asteroid — the largest that has never been visited by a spacecraft.'],
+  Juno: ['3 Juno', 'The third asteroid found (1804) — one of the largest, heavily cratered, in the inner main belt.'],
+  Psyche: ['16 Psyche', 'A metal world — likely the exposed core of a shattered planet; NASA\'s Psyche mission launched 2023 to visit it.'],
+  Davida: ['511 Davida', 'One of the largest main-belt asteroids — a dark C-type, 300+ km across.'],
+  Interamnia: ['704 Interamnia', 'One of the biggest main-belt asteroids, discovered 1910 from Collurania, Italy.'],
+  Pluto: ['134340 Pluto', 'The dwarf planet king of the Kuiper belt — 2,377 km, discovered 1930 by Clyde Tombaugh, reclassified 2006. Five moons.'],
+  Eris: ['136199 Eris', 'The dwarf planet whose discovery (2005) forced the reclassification of Pluto — 2,326 km, the most massive known dwarf planet.'],
+  Haumea: ['136108 Haumea', 'An egg-shaped dwarf planet spinning so fast it is stretched — with a ring and two moons, discovered 2004.'],
+  Makemake: ['136472 Makemake', 'A bright Kuiper belt dwarf planet (2005) — reddish, with one small moon discovered by Hubble.'],
+  Sedna: ['90377 Sedna', 'A distant world (2003) whose huge eccentric orbit hints at a hidden ninth planet — currently near its closest approach.'],
+  Quaoar: ['50000 Quaoar', 'A Kuiper belt world (2002) with a ring far beyond where rings should exist — discovered 2023.'],
+  Orcus: ['90482 Orcus', 'A "counter-Pluto" in the Kuiper belt (2004) — similar size and orbit to Pluto, mirrored across the Sun.'],
+  Gonggong: ['225088 Gonggong', 'A red dwarf planet candidate (2007) with a large moon — named for the Chinese water god.'],
+  Salacia: ['120347 Salacia', 'A large classical Kuiper belt object (2004) — roughly half Pluto\'s size, with its own moon.'],
+  '1P': ['1P/Halley', 'The most famous comet — returns every ~76 years. Last seen 1986, next perihelion 2061. Its dust feeds two meteor showers.'],
+  '2P': ['2P/Encke', 'The shortest-period bright comet — a 3.3-year orbit; its debris creates the Taurid fireballs.'],
+  '12P': ['12P/Pons-Brooks', 'The "devil comet" — a 71-year visitor with horns of gas; last passed Earth in 2024.'],
+  '109P': ['109P/Swift-Tuttle', 'The parent of the Perseid meteors — a 133-year orbit, next return 2126.'],
+  '8P': ['8P/Tuttle', 'A 13.6-year comet — the parent of the Ursid meteor shower.'],
+}
+
+const LAYER_DEFAULTS = Object.fromEntries(SPECIAL_LAYERS.map((l) => [l.key, true]))
+LAYER_DEFAULTS.smallbodies = true
+
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
 
 function splitSeg(pts) {
-  // split a polyline at the RA wrap (gap > 180°)
   const out = []
   let cur = [pts[0]]
   for (let i = 1; i < pts.length; i++) {
@@ -64,14 +93,14 @@ function buildStarPaths(stars, k, showAll) {
   const buckets = Array.from({ length: colorKeys.length + 1 }, () => Array.from({ length: 6 }, () => []))
   const w = 2 / (FACTOR * k)
   for (const s of stars) {
-    const [hip, ra, dec, mag, dist, spect, proper, bayer] = s
+    const [hip, ra, dec, mag] = s
     if (!showAll && mag > 6.5) continue
     let b = 5
     for (let i = 0; i < MAG_PX.length; i++) {
       if (mag <= MAG_PX[i].max) { b = i; break }
     }
     let ck = colorKeys.length
-    const ch = spect ? spect[0].toUpperCase() : ''
+    const ch = s[5] ? s[5][0].toUpperCase() : ''
     const idx = colorKeys.indexOf(ch)
     if (idx >= 0) ck = idx
     buckets[ck][b].push(`M${ra.toFixed(2)} ${dec.toFixed(2)}l${w} 0`)
@@ -91,14 +120,16 @@ function buildStarPaths(stars, k, showAll) {
   return paths
 }
 
-// ── the static map layers (memoized: only zoom/toggles rebuild them) ──
+// ── the static map layers ────────────────────────────────────
 const MapLayers = memo(function MapLayers(props) {
   const {
     k, stars, starPaths, messier, constellations, conSegs, bodyList,
-    bandD, eclD, showLines, showNames, showDeep, showGrid, showAll,
+    bandD, eclD, showLines, showNames, showDeep, showGrid,
+    cosmic, smalls, layers,
   } = props
   const sw = (px) => px / (FACTOR * k)
   const fs = (px) => px / (FACTOR * k)
+  const L = layers
 
   const gridLines = []
   if (showGrid) {
@@ -112,13 +143,16 @@ const MapLayers = memo(function MapLayers(props) {
   const starLabelVisible = (mag) =>
     mag <= 1.0 || (mag <= 2.5 && k >= 1.4) || (mag <= 3.5 && k >= 2.2) || (mag <= 4.2 && k >= 4)
 
+  const cosmicStyle = (cat) => {
+    const s = SPECIAL_LAYERS.find((x) => x.key === cat)
+    return s ? s.color : '#d4af37'
+  }
+
   return (
     <g>
-      {/* milky way band */}
       <path d={bandD} fill="rgba(200,220,240,0.055)" stroke="none" />
       <path d={eclD} fill="none" stroke="rgba(242,207,91,0.4)" strokeWidth={sw(1)} strokeDasharray={`${sw(2)} ${sw(2)}`} />
 
-      {/* grid */}
       {showGrid && (
         <g>
           {gridLines.map((g, i) =>
@@ -136,7 +170,6 @@ const MapLayers = memo(function MapLayers(props) {
         </g>
       )}
 
-      {/* constellation lines */}
       {showLines && (
         <g fill="none" stroke="rgba(212,175,55,0.4)" strokeWidth={sw(1)}>
           {conSegs.map((c, i) => (
@@ -145,14 +178,12 @@ const MapLayers = memo(function MapLayers(props) {
         </g>
       )}
 
-      {/* stars */}
       <g>
         {starPaths.map((p, i) => (
           <path key={i} d={p.d} stroke={p.color} strokeWidth={sw(p.px)} strokeLinecap="round" opacity={0.95} />
         ))}
       </g>
 
-      {/* star labels */}
       {showStarLabels && (
         <g>
           {stars.map((s) => {
@@ -161,8 +192,7 @@ const MapLayers = memo(function MapLayers(props) {
               <text
                 key={s[0] || (s[1] + s[2] + s[6])}
                 x={s[1]} y={s[2] - sw(s[3] <= 1 ? 6 : 8)}
-                textAnchor="middle"
-                fontSize={fs(s[3] <= 1 ? 9.5 : 8)}
+                textAnchor="middle" fontSize={fs(s[3] <= 1 ? 9.5 : 8)}
                 fill="rgba(233,220,192,0.85)"
                 style={{ fontFamily: `'EB Garamond', serif`, fontStyle: 'italic', pointerEvents: 'none' }}
               >
@@ -173,7 +203,6 @@ const MapLayers = memo(function MapLayers(props) {
         </g>
       )}
 
-      {/* constellation names */}
       {showConstLabels && (
         <g>
           {constellations.map((c) => (
@@ -184,7 +213,6 @@ const MapLayers = memo(function MapLayers(props) {
         </g>
       )}
 
-      {/* deep sky */}
       {showDeep && (
         <g>
           {messier.map((m) => {
@@ -207,7 +235,6 @@ const MapLayers = memo(function MapLayers(props) {
         </g>
       )}
 
-      {/* planets, sun, moon */}
       <g>
         {bodyList.map((b) => (
           <g key={b.id}>
@@ -225,7 +252,6 @@ const MapLayers = memo(function MapLayers(props) {
         ))}
       </g>
 
-      {/* meteor showers */}
       <g>
         {SHOWERS.map((s) => (
           <g key={s.id}>
@@ -239,6 +265,157 @@ const MapLayers = memo(function MapLayers(props) {
           </g>
         ))}
       </g>
+
+      {/* small bodies (computed positions) */}
+      {L.smallbodies && (
+        <g>
+          {smalls.map((s) => {
+            const col = s.kind === 'comet' ? '#9fe3ff' : s.kind === 'dwarf' ? '#e0d5b0' : '#c9b98a'
+            const r = sw(s.kind === 'dwarf' ? 2.4 : s.kind === 'comet' ? 2.0 : 1.6)
+            return (
+              <g key={s.key}>
+                <circle cx={s.ra} cy={s.dec} r={r} fill="none" stroke={col} strokeWidth={sw(1.1)} opacity={0.95} />
+                <circle cx={s.ra} cy={s.dec} r={sw(0.6)} fill={col} opacity={0.9} />
+                {s.kind === 'comet' && (
+                  <path d={`M${s.ra} ${s.dec} l${sw(-4)} ${sw(2.4)}`} stroke={col} strokeWidth={sw(1)} fill="none" opacity={0.7} />
+                )}
+                {showNames && k >= 2.2 && (
+                  <text x={s.ra} y={s.dec - r - sw(2)} textAnchor="middle" fontSize={fs(7)} fill={col} style={{ fontFamily: `'EB Garamond', serif`, fontStyle: 'italic', pointerEvents: 'none' }}>
+                    {s.short}
+                  </text>
+                )}
+              </g>
+            )
+          })}
+        </g>
+      )}
+
+      {/* cosmic objects */}
+      {SPECIAL_LAYERS.map((layer) => {
+        if (!L[layer.key]) return null
+        const items = cosmic[layer.key] || []
+        const col = layer.color
+        const showLabel = showNames && k >= 2.2
+        return (
+          <g key={layer.key}>
+            {items.map((it) => {
+              if (layer.key === 'blackholes') {
+                return (
+                  <g key={it.id}>
+                    <circle cx={it.ra} cy={it.dec} r={sw(2.6)} fill="#05070d" stroke={col} strokeWidth={sw(1.2)} />
+                    <circle cx={it.ra} cy={it.dec} r={sw(0.9)} fill={col} />
+                    <circle cx={it.ra} cy={it.dec} r={sw(3.6)} fill="none" stroke="rgba(212,175,55,0.35)" strokeWidth={sw(0.6)} strokeDasharray={`${sw(1)} ${sw(1.4)}`} />
+                    {showLabel && (
+                      <text x={it.ra} y={it.dec - sw(5)} textAnchor="middle" fontSize={fs(8)} fill={col} style={{ fontFamily: `'Cinzel', serif`, pointerEvents: 'none' }}>
+                        {it.name}
+                      </text>
+                    )}
+                  </g>
+                )
+              }
+              if (layer.key === 'pulsars') {
+                return (
+                  <g key={it.id}>
+                    <circle cx={it.ra} cy={it.dec} r={sw(2)} fill="none" stroke={col} strokeWidth={sw(1)} />
+                    <circle cx={it.ra} cy={it.dec} r={sw(0.7)} fill={col} />
+                    <path d={`M${it.ra - sw(3)} ${it.dec} h${sw(6)} M${it.ra} ${it.dec - sw(3)} v${sw(6)}`} stroke={col} strokeWidth={sw(0.7)} opacity={0.8} />
+                    {showLabel && (
+                      <text x={it.ra} y={it.dec - sw(4.5)} textAnchor="middle" fontSize={fs(7.5)} fill={col} style={{ fontFamily: `'EB Garamond', serif`, fontStyle: 'italic', pointerEvents: 'none' }}>
+                        {it.name}
+                      </text>
+                    )}
+                  </g>
+                )
+              }
+              if (layer.key === 'quasars') {
+                return (
+                  <g key={it.id}>
+                    <path d={`M${it.ra - sw(3.4)} ${it.dec} L${it.ra + sw(3.4)} ${it.dec} M${it.ra} ${it.dec - sw(3.4)} L${it.ra} ${it.dec + sw(3.4)}`} stroke={col} strokeWidth={sw(0.9)} />
+                    <circle cx={it.ra} cy={it.dec} r={sw(1.1)} fill={col} />
+                    {showLabel && (
+                      <text x={it.ra} y={it.dec - sw(4.5)} textAnchor="middle" fontSize={fs(7.5)} fill={col} style={{ fontFamily: `'EB Garamond', serif`, fontStyle: 'italic', pointerEvents: 'none' }}>
+                        {it.name}
+                      </text>
+                    )}
+                  </g>
+                )
+              }
+              if (layer.key === 'snr') {
+                return (
+                  <g key={it.id}>
+                    <circle cx={it.ra} cy={it.dec} r={sw(2.6)} fill="none" stroke={col} strokeWidth={sw(1)} strokeDasharray={`${sw(1.4)} ${sw(1)}`} />
+                    <circle cx={it.ra} cy={it.dec} r={sw(0.6)} fill={col} />
+                    {showLabel && (
+                      <text x={it.ra} y={it.dec - sw(4.8)} textAnchor="middle" fontSize={fs(7.5)} fill={col} style={{ fontFamily: `'EB Garamond', serif`, fontStyle: 'italic', pointerEvents: 'none' }}>
+                        {it.name}
+                      </text>
+                    )}
+                  </g>
+                )
+              }
+              if (layer.key === 'galaxies' || layer.key === 'dwarfs') {
+                const big = layer.key === 'galaxies'
+                return (
+                  <g key={it.id}>
+                    <ellipse
+                      cx={it.ra} cy={it.dec} rx={sw(big ? 3 : 2)} ry={sw(big ? 1.4 : 1)}
+                      fill={big ? 'none' : col}
+                      fillOpacity={big ? 0 : 0.35}
+                      stroke={col} strokeWidth={sw(0.9)}
+                      transform={`rotate(${30 * (it.id.charCodeAt(0) % 3) - 30} ${it.ra} ${it.dec})`}
+                    />
+                    <circle cx={it.ra} cy={it.dec} r={sw(0.6)} fill={col} />
+                    {showLabel && (
+                      <text x={it.ra} y={it.dec - sw(big ? 5 : 4)} textAnchor="middle" fontSize={fs(big ? 8 : 7)} fill={col} style={{ fontFamily: `'EB Garamond', serif`, fontStyle: 'italic', pointerEvents: 'none' }}>
+                        {it.name}
+                      </text>
+                    )}
+                  </g>
+                )
+              }
+              if (layer.key === 'exoplanets') {
+                return (
+                  <g key={it.id}>
+                    <circle cx={it.ra} cy={it.dec} r={sw(2.4)} fill="none" stroke={col} strokeWidth={sw(0.8)} />
+                    <circle cx={it.ra + sw(1.6)} cy={it.dec} r={sw(0.7)} fill={col} />
+                    <circle cx={it.ra} cy={it.dec} r={sw(0.8)} fill={col} opacity={0.6} />
+                    {showLabel && (
+                      <text x={it.ra} y={it.dec - sw(4.4)} textAnchor="middle" fontSize={fs(7.5)} fill={col} style={{ fontFamily: `'EB Garamond', serif`, fontStyle: 'italic', pointerEvents: 'none' }}>
+                        {it.name}
+                      </text>
+                    )}
+                  </g>
+                )
+              }
+              if (layer.key === 'clusters') {
+                return (
+                  <g key={it.id}>
+                    <circle cx={it.ra} cy={it.dec} r={sw(3)} fill="none" stroke={col} strokeWidth={sw(0.8)} strokeDasharray={`${sw(0.8)} ${sw(1.4)}`} />
+                    <circle cx={it.ra} cy={it.dec} r={sw(0.7)} fill={col} />
+                    {showLabel && (
+                      <text x={it.ra} y={it.dec - sw(5)} textAnchor="middle" fontSize={fs(7.5)} fill={col} style={{ fontFamily: `'EB Garamond', serif`, fontStyle: 'italic', pointerEvents: 'none' }}>
+                        {it.name}
+                      </text>
+                    )}
+                  </g>
+                )
+              }
+              // specials
+              return (
+                <g key={it.id}>
+                  <rect x={it.ra - sw(1.8)} y={it.dec - sw(1.8)} width={sw(3.6)} height={sw(3.6)} transform={`rotate(45 ${it.ra} ${it.dec})`} fill="none" stroke={col} strokeWidth={sw(0.9)} />
+                  <circle cx={it.ra} cy={it.dec} r={sw(0.7)} fill={col} />
+                  {showLabel && (
+                    <text x={it.ra} y={it.dec - sw(4.4)} textAnchor="middle" fontSize={fs(7.5)} fill={col} style={{ fontFamily: `'EB Garamond', serif`, fontStyle: 'italic', pointerEvents: 'none' }}>
+                      {it.name}
+                    </text>
+                  )}
+                </g>
+              )
+            })}
+          </g>
+        )
+      })}
     </g>
   )
 })
@@ -248,16 +425,38 @@ export default function SkyMap({ initialQuery = '' }) {
   const [dateStr] = useState(() => todayUTC())
   const bodies = useMemo(() => allBodies(dateStr), [dateStr])
   const bodyList = useMemo(
-    () =>
-      Object.entries(bodies)
-        .map(([id, p]) => ({ id, ...p, ...BODY_STYLE[id] }))
-        .filter((b) => b.name),
+    () => Object.entries(bodies).map(([id, p]) => ({ id, ...p, ...BODY_STYLE[id] })).filter((b) => b.name),
     [bodies]
   )
 
   const stars = useMemo(() => starsJson.stars, [])
   const messier = useMemo(() => messierJson.objects, [])
   const constellations = useMemo(() => constellationsJson.constellations, [])
+  const cosmic = useMemo(() => COSMIC, [])
+  const allCosmic = useMemo(() => flattenCosmic(), [])
+
+  // computed small-body positions for the chosen date
+  const smalls = useMemo(() => {
+    return Object.entries(smallbodiesJson).map(([key, el]) => {
+      const pos = smallBodyPosition(el, dateStr)
+      const [short, fact] = SB_FACTS[key] || [el.name.split(' ').slice(-1)[0] || key, '']
+      return {
+        key,
+        name: el.name,
+        short,
+        kind: el.kind,
+        class: el.class,
+        fact,
+        period: el.period,
+        ra: pos.ra,
+        dec: pos.dec,
+        distAU: pos.distAU,
+        r: pos.helioR,
+        helioLon: pos.helioLon,
+        helioLat: pos.helioLat,
+      }
+    })
+  }, [dateStr])
 
   const [k, setK] = useState(1)
   const [center, setCenter] = useState({ x: 180, y: 20 })
@@ -266,6 +465,7 @@ export default function SkyMap({ initialQuery = '' }) {
   const [showNames, setShowNames] = useState(true)
   const [showDeep, setShowDeep] = useState(true)
   const [showGrid, setShowGrid] = useState(true)
+  const [layers, setLayers] = useState(LAYER_DEFAULTS)
   const [selected, setSelected] = useState(null)
   const [tooltip, setTooltip] = useState(null)
   const [tipPos, setTipPos] = useState({ x: 50, y: 20 })
@@ -291,15 +491,12 @@ export default function SkyMap({ initialQuery = '' }) {
     const out = []
     for (const c of constellations) {
       for (const seg of c.lines) {
-        for (const part of splitSeg(seg)) {
-          out.push({ cid: c.id, name: c.name, desig: c.desig, seg: part })
-        }
+        for (const part of splitSeg(seg)) out.push({ cid: c.id, name: c.name, desig: c.desig, seg: part })
       }
     }
     return out
   }, [constellations])
 
-  // ── fly to ─────────────────────────────────────────────────
   const flyTo = (ra, dec, targetK) => {
     setK(clamp(targetK, MIN_K, MAX_K))
     setCenter({ x: ra, y: clamp(dec, -84, 84) })
@@ -313,19 +510,16 @@ export default function SkyMap({ initialQuery = '' }) {
       if (proper) idx.push({ label: proper, sub: `${bayer || 'star'} · mag ${mag}`, type: 'star', obj: { kind: 'star', star: s, ra, dec } })
     }
     for (const m of messier) {
-      idx.push({
-        label: `M${m.m}${m.name ? ' — ' + m.name : ''}`,
-        sub: `${m.type} · ${m.con}`,
-        type: 'messier',
-        obj: { kind: 'messier', messier: m, ra: m.ra, dec: m.dec },
-      })
+      idx.push({ label: `M${m.m}${m.name ? ' — ' + m.name : ''}`, sub: `${m.type} · ${m.con}`, type: 'messier', obj: { kind: 'messier', messier: m, ra: m.ra, dec: m.dec } })
       if (m.ngc) idx.push({ label: `NGC ${m.ngc}`, sub: `M${m.m} · ${m.type}`, type: 'messier', obj: { kind: 'messier', messier: m, ra: m.ra, dec: m.dec } })
     }
     for (const b of bodyList) idx.push({ label: b.name, sub: 'wanderer of the court', type: 'body', obj: { kind: 'body', body: b, ra: b.ra, dec: b.dec } })
     for (const s of SHOWERS) idx.push({ label: s.name, sub: `${s.peak} · ZHR ${s.zhr}`, type: 'shower', obj: { kind: 'shower', shower: s, ra: s.ra, dec: s.dec } })
     for (const c of constellations) idx.push({ label: c.name, sub: c.desig, type: 'constellation', obj: { kind: 'constellation', c, ra: c.center[0], dec: c.center[1] } })
+    for (const s of smalls) idx.push({ label: s.name, sub: s.kind === 'comet' ? 'comet · computed position' : s.kind === 'dwarf' ? 'dwarf planet · computed position' : 'asteroid · computed position', type: 'small', obj: { kind: 'small', s, ra: s.ra, dec: s.dec } })
+    for (const it of allCosmic) idx.push({ label: it.name, sub: it.type, type: 'cosmic', obj: { kind: 'cosmic', it, ra: it.ra, dec: it.dec } })
     return idx
-  }, [stars, messier, bodyList, constellations])
+  }, [stars, messier, bodyList, constellations, smalls, allCosmic])
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -334,12 +528,11 @@ export default function SkyMap({ initialQuery = '' }) {
   }, [query, searchIndex])
 
   const pickResult = (r) => {
-    flyTo(r.obj.ra, r.obj.dec, r.type === 'star' ? 24 : r.type === 'messier' ? 10 : r.type === 'body' ? 6 : 8)
+    flyTo(r.obj.ra, r.obj.dec, r.type === 'star' ? 24 : r.type === 'messier' ? 10 : r.type === 'small' ? 4 : r.type === 'body' ? 6 : 8)
     setSelected(r.obj)
     setQuery('')
   }
 
-  // auto-fly when arriving with ?q=
   useEffect(() => {
     if (initialQuery) setQuery(initialQuery)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -363,7 +556,6 @@ export default function SkyMap({ initialQuery = '' }) {
     return { x: (ux - W / 2) / k + center.x, y: (uy - H / 2) / k + center.y }
   }
 
-  // native wheel (non-passive so we can preventDefault)
   useEffect(() => {
     const el = svgRef.current
     if (!el) return
@@ -381,7 +573,6 @@ export default function SkyMap({ initialQuery = '' }) {
     return () => el.removeEventListener('wheel', onWheel)
   }, [k, center])
 
-  // ── pointer ────────────────────────────────────────────────
   const onPointerDown = (e) => {
     dragRef.current = { x: e.clientX, y: e.clientY, cx: center.x, cy: center.y, moved: false }
     e.currentTarget.setPointerCapture(e.pointerId)
@@ -435,24 +626,26 @@ export default function SkyMap({ initialQuery = '' }) {
       }
     }
     if (best) return best
-    for (const m of messier) {
-      const d = Math.hypot(m.ra - x, m.dec - y)
-      if (d < bestD) { bestD = d; best = { kind: 'messier', messier: m, ra: m.ra, dec: m.dec } }
+    const consider = (t, ra, dec) => {
+      const d = Math.hypot(ra - x, dec - y)
+      if (d < bestD) {
+        bestD = d
+        best = t
+      }
     }
-    for (const b of bodyList) {
-      const d = Math.hypot(b.ra - x, b.dec - y)
-      if (d < bestD) { bestD = d; best = { kind: 'body', body: b, ra: b.ra, dec: b.dec } }
-    }
-    for (const s of SHOWERS) {
-      const d = Math.hypot(s.ra - x, s.dec - y)
-      if (d < bestD) { bestD = d; best = { kind: 'shower', shower: s, ra: s.ra, dec: s.dec } }
-    }
+    for (const m of messier) consider({ kind: 'messier', messier: m, ra: m.ra, dec: m.dec }, m.ra, m.dec)
+    for (const b of bodyList) consider({ kind: 'body', body: b, ra: b.ra, dec: b.dec }, b.ra, b.dec)
+    for (const s of SHOWERS) consider({ kind: 'shower', shower: s, ra: s.ra, dec: s.dec }, s.ra, s.dec)
+    for (const s of smalls) consider({ kind: 'small', s, ra: s.ra, dec: s.dec }, s.ra, s.dec)
+    for (const it of allCosmic) consider({ kind: 'cosmic', it, ra: it.ra, dec: it.dec }, it.ra, it.dec)
     return bestD < thresh ? best : null
   }
 
   const transform = `translate(${W / 2 - center.x * k} ${H / 2 - center.y * k}) scale(${k})`
   const sw2 = (px) => px / (FACTOR * k)
   const selWorld = selected ? { ra: selected.ra ?? selected.c?.center?.[0], dec: selected.dec ?? selected.c?.center?.[1] } : null
+
+  const toggleLayer = (key) => setLayers((l) => ({ ...l, [key]: !l[key] }))
 
   return (
     <div className="skywrap">
@@ -462,7 +655,7 @@ export default function SkyMap({ initialQuery = '' }) {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Seek a star, world or wonder… e.g. Sirius, M31, Europa"
+            placeholder="Seek a star, black hole, world or wonder… Sirius, Sgr A*, M31, Pluto, Halley, TON 618"
             aria-label="Search the sky"
           />
           {results.length > 0 && (
@@ -486,12 +679,23 @@ export default function SkyMap({ initialQuery = '' }) {
         <div className="map-toggles">
           <label className="mt"><input type="checkbox" checked={showLines} onChange={(e) => setShowLines(e.target.checked)} /> lines</label>
           <label className="mt"><input type="checkbox" checked={showNames} onChange={(e) => setShowNames(e.target.checked)} /> names</label>
-          <label className="mt"><input type="checkbox" checked={showDeep} onChange={(e) => setShowDeep(e.target.checked)} /> deep sky</label>
+          <label className="mt"><input type="checkbox" checked={showDeep} onChange={(e) => setShowDeep(e.target.checked)} /> Messier</label>
           <label className="mt"><input type="checkbox" checked={showGrid} onChange={(e) => setShowGrid(e.target.checked)} /> grid</label>
           <label className="mt" title="also draw the very faint"><input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} /> faint</label>
         </div>
 
         <div className="map-date">⚷ {dateStr}</div>
+      </div>
+
+      {/* layer chips */}
+      <div className="maptoolbar layer-bar">
+        <span className="layer-lbl">The deeper catalog:</span>
+        <label className="mt"><input type="checkbox" checked={layers.smallbodies} onChange={() => toggleLayer('smallbodies')} /> small bodies</label>
+        {SPECIAL_LAYERS.map((l) => (
+          <label key={l.key} className="mt" style={{ color: layers[l.key] ? l.color : undefined }}>
+            <input type="checkbox" checked={layers[l.key]} onChange={() => toggleLayer(l.key)} /> {l.label}
+          </label>
+        ))}
       </div>
 
       <div className="map-canvas">
@@ -519,6 +723,9 @@ export default function SkyMap({ initialQuery = '' }) {
               showNames={showNames}
               showDeep={showDeep}
               showGrid={showGrid}
+              cosmic={cosmic}
+              smalls={smalls}
+              layers={layers}
             />
             {selWorld && (
               <circle
@@ -541,6 +748,8 @@ export default function SkyMap({ initialQuery = '' }) {
             {tooltip.kind === 'messier' && <><b>M{tooltip.messier.m}</b> <span>{tooltip.messier.name || tooltip.messier.type}</span></>}
             {tooltip.kind === 'body' && <><b>{tooltip.body.name}</b> <span>planet</span></>}
             {tooltip.kind === 'shower' && <><b>{tooltip.shower.name}</b> <span>meteor shower</span></>}
+            {tooltip.kind === 'small' && <><b>{tooltip.s.short}</b> <span>{tooltip.s.kind === 'comet' ? 'comet' : tooltip.s.kind === 'dwarf' ? 'dwarf planet' : 'asteroid'}</span></>}
+            {tooltip.kind === 'cosmic' && <><b>{tooltip.it.name}</b> <span>{tooltip.it.type}</span></>}
           </div>
         )}
       </div>
@@ -570,20 +779,23 @@ function InfoPanel({ selected, onClose }) {
         <p className="eyebrow">The chart</p>
         <h3>Touch a light to read it</h3>
         <p>
-          This is a real map of the heavens for <b>{todayUTC()}</b>: {starsJson.meta.count.toLocaleString()} stars from the
-          HYG catalogue, all {messierJson.meta.count} objects of Messier's list, the wanderers in their true
-          computed positions, and the major meteor showers. Drag to wander, scroll to descend, click to learn.
+          This is a real map of the heavens for <b>{todayUTC()}</b>: {starsJson.meta.count.toLocaleString()} stars,
+          all {messierJson.meta.count} objects of Messier, the wanderers in true positions, 11 meteor showers,
+          black holes, pulsars, quasars, supernova remnants, galaxies, exoplanet systems, dwarf planets and
+          comets — every one with its true place and its story. Drag to wander, scroll to descend, click to learn.
         </p>
       </aside>
     )
   }
 
   const k = selected.kind
+  const close = <button className="info-close" onClick={onClose}>✕</button>
+
   if (k === 'star') {
     const s = selected.star
     return (
       <aside className="panel map-info">
-        <button className="info-close" onClick={onClose}>✕</button>
+        {close}
         <p className="eyebrow">A fixed light · HIP {s[0] || '—'}</p>
         <h2>{s[6] || s[7] || 'Unnamed star'}</h2>
         {s[7] && <div className="ledger-ancient">{s[7]}</div>}
@@ -602,7 +814,7 @@ function InfoPanel({ selected, onClose }) {
     const m = selected.messier
     return (
       <aside className="panel map-info">
-        <button className="info-close" onClick={onClose}>✕</button>
+        {close}
         <p className="eyebrow">A wonder of the deep · {m.con}</p>
         <h2>M{m.m}{m.name ? ` — ${m.name}` : ''}</h2>
         {m.ngc && <div className="ledger-ancient">NGC {m.ngc}</div>}
@@ -621,7 +833,7 @@ function InfoPanel({ selected, onClose }) {
     const b = selected.body
     return (
       <aside className="panel map-info">
-        <button className="info-close" onClick={onClose}>✕</button>
+        {close}
         <p className="eyebrow">A wanderer of the court · {todayUTC()}</p>
         <h2>{b.name}</h2>
         <dl className="info-list">
@@ -639,7 +851,7 @@ function InfoPanel({ selected, onClose }) {
     const s = selected.shower
     return (
       <aside className="panel map-info">
-        <button className="info-close" onClick={onClose}>✕</button>
+        {close}
         <p className="eyebrow">A falling star · radiant</p>
         <h2>{s.name}</h2>
         <dl className="info-list">
@@ -650,6 +862,47 @@ function InfoPanel({ selected, onClose }) {
           <InfoRow k="Radiant Dec" v={formatDec(s.dec)} />
         </dl>
         <p className="info-note">{s.note} Radiant from the IMO meteor data.</p>
+      </aside>
+    )
+  }
+  if (k === 'small') {
+    const s = selected.s
+    return (
+      <aside className="panel map-info">
+        {close}
+        <p className="eyebrow">
+          {s.kind === 'comet' ? 'A wandering star · comet' : s.kind === 'dwarf' ? 'A dwarf world' : 'A minor world · asteroid'} · {todayUTC()}
+        </p>
+        <h2>{s.name}</h2>
+        <dl className="info-list">
+          <InfoRow k="Kind" v={s.kind === 'comet' ? 'Comet' : s.kind === 'dwarf' ? 'Dwarf planet' : 'Asteroid'} />
+          <InfoRow k="Orbit class" v={s.class || '—'} />
+          <InfoRow k="Distance from Sun" v={`${s.r.toFixed(2)} AU`} />
+          <InfoRow k="Distance from Earth" v={`${s.distAU.toFixed(2)} AU`} />
+          <InfoRow k="Right ascension" v={formatRA(s.ra)} />
+          <InfoRow k="Declination" v={formatDec(s.dec)} />
+        </dl>
+        <p className="info-note">{s.fact} Position computed today from JPL orbital elements.</p>
+      </aside>
+    )
+  }
+  if (k === 'cosmic') {
+    const it = selected.it
+    return (
+      <aside className="panel map-info">
+        {close}
+        <p className="eyebrow">{it.type}</p>
+        <h2>{it.name}</h2>
+        {it.year && <div className="ledger-ancient">{it.year}</div>}
+        <dl className="info-list">
+          {it.mass && <InfoRow k="Mass" v={it.mass} />}
+          {it.dist && <InfoRow k="Distance" v={it.dist} />}
+          {it.period && <InfoRow k="Spin" v={it.period} />}
+          {it.redshift && <InfoRow k="Redshift" v={it.redshift} />}
+          <InfoRow k="Right ascension" v={formatRA(it.ra)} />
+          <InfoRow k="Declination" v={formatDec(it.dec)} />
+        </dl>
+        <p className="info-note">{it.fact}</p>
       </aside>
     )
   }
