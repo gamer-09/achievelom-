@@ -308,20 +308,21 @@ function InfoPanel({ info, dateStr, onClose }) {
   }
   if (info.kind === 'planet') {
     const p = info.p
+    const isEarth = p.id === 'earth'
     return (
       <aside className="panel map-info">
         <button className="info-close" onClick={onClose}>✕</button>
-        <p className="eyebrow">A wanderer · {dateStr}</p>
+        <p className="eyebrow">{isEarth ? 'The home world' : 'A wanderer'} · {dateStr}</p>
         <h2>{p.name} <span className="ledger-ancient">{p.glyph}</span></h2>
         <dl className="info-list">
-          <InfoRow k="Distance from Sun" v={`${p.a} AU`} />
-          <InfoRow k="Distance from Earth" v={`${p.distAU.toFixed(2)} AU · ${p.lightMin.toFixed(1)} light-min`} />
+          <InfoRow k="Distance from Sun" v={isEarth ? '1.00 AU (mean)' : `${p.a} AU`} />
+          {!isEarth && <InfoRow k="Distance from Earth" v={`${p.distAU.toFixed(2)} AU · ${p.lightMin.toFixed(1)} light-min`} />}
           <InfoRow k="Right ascension" v={fmtRA(p.ra)} />
           <InfoRow k="Declination" v={fmtDec(p.dec)} />
-          <InfoRow k="Magnitude" v={p.mag.toFixed(1)} />
+          {!isEarth && <InfoRow k="Magnitude" v={p.mag != null ? p.mag.toFixed(1) : '—'} />}
           <InfoRow k="Heliocentric longitude" v={`${p.helioLon.toFixed(1)}°`} />
         </dl>
-        <p className="info-note">{NOTE[p.id]}</p>
+        <p className="info-note">{NOTE[p.id]}{isEarth ? ' You are standing on this world.' : ''}</p>
       </aside>
     )
   }

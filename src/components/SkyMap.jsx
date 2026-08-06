@@ -840,7 +840,7 @@ function InfoPanel({ selected, onClose }) {
           <InfoRow k="Right ascension" v={formatRA(b.ra)} />
           <InfoRow k="Declination" v={formatDec(b.dec)} />
           <InfoRow k="Distance" v={`${b.distAU.toFixed(2)} AU · ${b.lightMin.toFixed(1)} light-minutes`} />
-          <InfoRow k="Magnitude" v={b.mag.toFixed(1)} />
+          <InfoRow k="Magnitude" v={b.mag != null ? b.mag.toFixed(1) : '—'} />
           <InfoRow k="Ecliptic longitude" v={`${b.helioLon.toFixed(1)}°`} />
         </dl>
         <p className="info-note">{BODY_FACTS[b.id] || ''} Position computed for today by the Celestial Calculator.</p>

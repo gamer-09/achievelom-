@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import NavBar from './components/NavBar.jsx'
 import Footer from './components/Footer.jsx'
+import ErrorBoundary from './components/ErrorBoundary.jsx'
 import HomePage from './components/HomePage.jsx'
 import Chronicles from './components/Chronicles.jsx'
 import Lore from './components/Lore.jsx'
@@ -61,10 +62,12 @@ export default function App() {
     <div className="app-shell">
       <NavBar route={route} navigate={navigate} />
       <main>
-        {route.page === 'home' && <HomePage navigate={navigate} />}
-        {route.page === 'atlas' && <AtlasLoader key={route.tab} tab={route.tab} query={route.query} />}
-        {route.page === 'chronicles' && <Chronicles />}
-        {route.page === 'lore' && <Lore />}
+        <ErrorBoundary>
+          {route.page === 'home' && <HomePage navigate={navigate} />}
+          {route.page === 'atlas' && <AtlasLoader key={route.tab} tab={route.tab} query={route.query} />}
+          {route.page === 'chronicles' && <Chronicles />}
+          {route.page === 'lore' && <Lore />}
+        </ErrorBoundary>
       </main>
       <Footer />
     </div>
