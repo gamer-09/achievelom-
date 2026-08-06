@@ -1,14 +1,41 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import NavBar from './components/NavBar.jsx'
 import Footer from './components/Footer.jsx'
 import HomePage from './components/HomePage.jsx'
-import Atlas from './components/Atlas.jsx'
 import Chronicles from './components/Chronicles.jsx'
 import Lore from './components/Lore.jsx'
 
+const Atlas = lazy(() => import('./components/Atlas.jsx'))
+
+function AtlasLoader({ tab, query }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="page container">
+          <div className="panel loading-panel">
+            <p className="empty-note">
+              <span className="loading-dots">unrolling the chart of the heavens</span>
+            </p>
+          </div>
+        </div>
+      }
+    >
+      <Atlas tab={tab} initialQuery={query} />
+    </Suspense>
+  )
+}
+
 function parseRoute(hash) {
-  const parts = hash.replace(/^#\/?/, '').split('/').filter(Boolean)
-  if (parts[0] === 'atlas') return { page: 'atlas', id: parts[1] || null }
+  const raw = hash.replace(/^#\/?/, '')
+  const [pathPart, queryPart] = raw.split('?')
+  const parts = pathPart.split('/').filter(Boolean)
+  if (parts[0] === 'atlas' && parts[1] === 'system') {
+    return { page: 'atlas', tab: 'system', query: '' }
+  }
+  if (parts[0] === 'atlas') {
+    const q = new URLSearchParams(queryPart || '').get('q') || ''
+    return { page: 'atlas', tab: 'sky', query: q }
+  }
   if (parts[0] === 'chronicles') return { page: 'chronicles' }
   if (parts[0] === 'lore') return { page: 'lore' }
   return { page: 'home' }
@@ -35,7 +62,7 @@ export default function App() {
       <NavBar route={route} navigate={navigate} />
       <main>
         {route.page === 'home' && <HomePage navigate={navigate} />}
-        {route.page === 'atlas' && <Atlas key={route.id || 'root'} startId={route.id} navigate={navigate} />}
+        {route.page === 'atlas' && <AtlasLoader key={route.tab} tab={route.tab} query={route.query} />}
         {route.page === 'chronicles' && <Chronicles />}
         {route.page === 'lore' && <Lore />}
       </main>

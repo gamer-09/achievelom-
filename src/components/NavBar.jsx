@@ -1,5 +1,5 @@
 export default function NavBar({ route, navigate }) {
-  const is = (p) => route.page === p
+  const is = (p) => route.page === p || (p === 'atlas' && route.page === 'atlas')
   return (
     <header className="nav">
       <div className="container nav-inner">
@@ -21,12 +21,12 @@ export default function NavBar({ route, navigate }) {
 
         <nav className="nav-links">
           <button className={`nav-link ${is('atlas') ? 'active' : ''}`} onClick={() => navigate('/atlas')}>
-            The Atlas
+            The Map
           </button>
-          <button className={`nav-link ${is('chronicles') ? 'active' : ''}`} onClick={() => navigate('/chronicles')}>
+          <button className={`nav-link ${route.page === 'chronicles' ? 'active' : ''}`} onClick={() => navigate('/chronicles')}>
             The Chronicles
           </button>
-          <button className={`nav-link ${is('lore') ? 'active' : ''}`} onClick={() => navigate('/lore')}>
+          <button className={`nav-link ${route.page === 'lore' ? 'active' : ''}`} onClick={() => navigate('/lore')}>
             The Lore
           </button>
         </nav>

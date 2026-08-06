@@ -3,14 +3,22 @@ import { fetchApod, fetchNews, formatDate } from '../api/news.js'
 import { ALMANAC } from '../data/lore.js'
 
 const ATLAS_CHIPS = [
-  { id: 'multiverse', label: 'Multiverse' },
-  { id: 'universe', label: 'Observable Universe' },
-  { id: 'milky-way', label: 'Milky Way' },
-  { id: 'solar-system', label: 'Solar System' },
-  { id: 'earth', label: 'Earth' },
-  { id: 'jupiter', label: 'Jupiter' },
-  { id: 'mars', label: 'Mars' },
-  { id: 'europa', label: 'Europa' },
+  { id: 'sky', label: 'The Sky Tonight', path: '/atlas' },
+  { id: 'system', label: 'The Solar System', path: '/atlas/system' },
+  { id: 'sirius', label: 'Sirius', path: '/atlas?q=Sirius' },
+  { id: 'm31', label: 'Andromeda (M31)', path: '/atlas?q=M31' },
+  { id: 'orion', label: 'Orion', path: '/atlas?q=Orion' },
+  { id: 'perseids', label: 'Perseids', path: '/atlas?q=Perseids' },
+  { id: 'jupiter', label: 'Jupiter', path: '/atlas?q=Jupiter' },
+  { id: 'europa', label: 'Europa', path: '/atlas?q=Europa' },
+]
+
+const REAL_STATS = [
+  { n: '9,027', l: 'real stars on the chart' },
+  { n: '110', l: 'Messier deep-sky wonders' },
+  { n: '8', l: 'wanderers in true positions' },
+  { n: '11', l: 'meteor showers mapped' },
+  { n: '88', l: 'constellations drawn' },
 ]
 
 export default function HomePage({ navigate }) {
@@ -39,28 +47,54 @@ export default function HomePage({ navigate }) {
           <img src="/hero.jpg" alt="" />
         </div>
         <div className="hero-inner">
-          <div className="hero-eyebrow">An atlas drawn across the ages · from the Babylonians to the Webb</div>
+          <div className="hero-eyebrow">A real map of a real sky · drawn across the ages</div>
           <h1 className="hero-title">Cosmographia</h1>
           <p className="hero-tagline">
-            Every age has drawn the heavens its own way. Here the old maps and the new
-            discoveries meet: descend from the infinite aeons to the moons of the outer
-            dark, and read what the modern sky-watchers have recently learned.
+            Not a diagram — a map. Thousands of real stars, the true positions of the
+            planets for today, every wonder of Messier's list, and the falling stars of
+            the year, plotted from actual astronomical data. Drag to wander, scroll to
+            descend, click any light to read what is known of it.
           </p>
           <div className="hero-cta">
             <button className="btn gold" onClick={() => navigate('/atlas')}>
-              ✦ Open the Atlas
+              ✦ Open the Map
+            </button>
+            <button className="btn ghost" onClick={() => navigate('/atlas/system')}>
+              ☉ The Solar System today
             </button>
             <button className="btn ghost" onClick={() => navigate('/chronicles')}>
               Read the Chronicles
-            </button>
-            <button className="btn ghost" onClick={() => navigate('/lore')}>
-              The Lore of the Heavens
             </button>
           </div>
         </div>
         <div className="hero-rays" aria-hidden="true">
           {Array.from({ length: 18 }).map((_, i) => (
             <span key={i} style={{ transform: `rotate(${i * 20}deg)` }} />
+          ))}
+        </div>
+      </section>
+
+      {/* ── real stats ── */}
+      <section className="stats-row" style={{ marginTop: 40 }}>
+        {REAL_STATS.map((s) => (
+          <div key={s.l} className="stat">
+            <span className="stat-num">{s.n}</span>
+            <span className="stat-lbl">{s.l}</span>
+          </div>
+        ))}
+      </section>
+
+      {/* ── jump into the map ── */}
+      <section style={{ marginTop: 84 }}>
+        <div className="section-title-wrap">
+          <h2 className="section-title">Enter the Chart</h2>
+          <p className="section-note">real data · real positions · click anything</p>
+        </div>
+        <div className="chip-wall">
+          {ATLAS_CHIPS.map((c) => (
+            <button key={c.id} className="chip gold big" onClick={() => navigate(c.path)}>
+              {c.label}
+            </button>
           ))}
         </div>
       </section>
@@ -91,31 +125,6 @@ export default function HomePage({ navigate }) {
               </div>
             </div>
           )}
-        </div>
-      </section>
-
-      {/* ── descend the great chain ── */}
-      <section style={{ marginTop: 84 }}>
-        <div className="section-title-wrap">
-          <h2 className="section-title">Descend the Great Chain</h2>
-          <p className="section-note">from the aeons to the ocean moons</p>
-        </div>
-        <div className="chip-wall">
-          {ATLAS_CHIPS.map((c) => (
-            <button key={c.id} className="chip gold big" onClick={() => navigate(`/atlas/${c.id}`)}>
-              {c.label}
-            </button>
-          ))}
-        </div>
-        <div className="chain-visual panel">
-          <div className="chain-row">
-            {['Multiverse', 'Universe', 'Laniakea', 'Local Group', 'Milky Way', 'Solar System', 'Worlds', 'Moons'].map((step, i, arr) => (
-              <div key={step} className={`chain-step ${i === arr.length - 1 ? 'last' : ''}`}>
-                <span className="chain-dot" />
-                <span className="chain-name">{step}</span>
-              </div>
-            ))}
-          </div>
         </div>
       </section>
 
