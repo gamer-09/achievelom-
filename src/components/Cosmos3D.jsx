@@ -1,14 +1,14 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { forwardRef, memo, useEffect, useImperativeHandle, useRef, useState } from 'react'
 
 const D2R = Math.PI / 180
 const V = 520 // viewBox size
 const C = V / 2
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
-const MIN_K = 0.5
-const MAX_K = 150
+const MIN_K = 0.4
+const MAX_K = 160
 
 // screen-size factor: points stay ~constant size, grow a little when deep-zoomed
-const sizeF = (k) => Math.min(1.5, Math.sqrt(k))
+const sizeF = (k) => Math.min(1.6, Math.sqrt(k))
 
 // ── static layer: batched projected points (constant screen sizes) ──
 const ProjectedLayer = memo(function ProjectedLayer({ objs, rotY, rotX, k, range, tx, ty }) {
@@ -18,7 +18,7 @@ const ProjectedLayer = memo(function ProjectedLayer({ objs, rotY, rotX, k, range
   const f = sizeF(k)
   const pxW = (r) => Math.max(0.5, r * f)
 
-  const buckets = new Map() // key -> {color, w, arr, op}
+  const buckets = new Map() // key -> {color, w, op, arr}
   const glyphs = []
   for (const o of objs) {
     const x1 = o.x * cosY + o.z * sinY
@@ -57,6 +57,13 @@ const ProjectedLayer = memo(function ProjectedLayer({ objs, rotY, rotX, k, range
               <line x1={g.sx - pxW(g.r)} y1={g.sy} x2={g.sx + pxW(g.r)} y2={g.sy} />
               <line x1={g.sx} y1={g.sy - pxW(g.r)} x2={g.sx} y2={g.sy + pxW(g.r)} />
             </g>
+          ) : g.shape === 'diamond' ? (
+            <g>
+              <polygon
+                points={`${g.sx},${g.sy - pxW(g.r)} ${g.sx + pxW(g.r)},${g.sy} ${g.sx},${g.sy + pxW(g.r)} ${g.sx - pxW(g.r)},${g.sy}`}
+                fill={g.color} stroke="rgba(10,18,32,0.8)" strokeWidth={Math.max(0.6, 0.7 * f)}
+              />
+            </g>
           ) : (
             <circle cx={g.sx} cy={g.sy} r={pxW(g.r)} fill={g.color} stroke="rgba(10,18,32,0.7)" strokeWidth={Math.max(0.6, 0.7 * f)} />
           )}
@@ -71,13 +78,51 @@ const ProjectedLayer = memo(function ProjectedLayer({ objs, rotY, rotX, k, range
   )
 })
 
+// ── 3D polylines (constellation lines, orbit rings, equator, ecliptic) ──
+const LineLayer = memo(function LineLayer({ lines, rotY, rotX, k, range, tx, ty }) {
+  if (!lines || !lines.length) return null
+  const cosY = Math.cos(rotY * D2R), sinY = Math.sin(rotY * D2R)
+  const cosX = Math.cos(rotX * D2R), sinX = Math.sin(rotX * D2R)
+  const S = (C / range) * k
+  const out = []
+  for (const ln of lines) {
+    if (ln.maxK && k > ln.maxK) continue
+    let d = ''
+    let segs = []
+    for (const p of ln.pts) {
+      const x1 = p[0] * cosY + p[2] * sinY
+      const z1 = -p[0] * sinY + p[2] * cosY
+      const y1 = p[1] * cosX - z1 * sinX
+      const z2 = p[1] * sinX + z1 * cosX
+      if (z2 < -range * 0.9) {
+        // fully behind the camera — break the line
+        if (d) segs.push(d)
+        d = ''
+        continue
+      }
+      const sx = C + x1 * S + tx
+      const sy = C - y1 * S + ty
+      d += (d ? 'L' : 'M') + sx.toFixed(1) + ' ' + sy.toFixed(1)
+    }
+    if (d) segs.push(d)
+    for (const seg of segs) {
+      out.push(
+        <path key={ln.id} d={seg} fill="none" stroke={ln.color} strokeWidth={ln.width ?? 1} opacity={ln.opacity ?? 0.6} strokeLinejoin="round" />
+      )
+    }
+  }
+  return <g>{out}</g>
+})
+
 // ── main viewer ──────────────────────────────────────────────
-export default function Cosmos3D({
-  objects, range, unit,
-  view = { rotY: -35, rotX: 22, k: 1 },
-  hint, onSelect, selected,
-  children,
-}) {
+const Cosmos3D = forwardRef(function Cosmos3D(
+  {
+    objects, lines, range, unit,
+    view = { rotY: -35, rotX: 22, k: 1 },
+    hint, onSelect, selected,
+  },
+  ref
+) {
   const [rotY, setRotY] = useState(view.rotY)
   const [rotX, setRotX] = useState(view.rotX)
   const [k, setK] = useState(view.k)
@@ -90,18 +135,56 @@ export default function Cosmos3D({
 
   const S0 = C / range // scale at k=1
 
-  // project a 3D point to screen coords (world -> viewBox px)
-  const project = useMemo(() => {
+  const project = (o) => {
     const cosY = Math.cos(rotY * D2R), sinY = Math.sin(rotY * D2R)
     const cosX = Math.cos(rotX * D2R), sinX = Math.sin(rotX * D2R)
-    return (o) => {
-      const x1 = o.x * cosY + o.z * sinY
-      const z1 = -o.x * sinY + o.z * cosY
-      const y1 = o.y * cosX - z1 * sinX
-      const z2 = o.y * sinX + z1 * cosX
-      return { sx: C + x1 * S0 * k + tx, sy: C - y1 * S0 * k + ty, z2 }
-    }
-  }, [rotY, rotX, k, tx, ty, S0])
+    const x1 = o.x * cosY + o.z * sinY
+    const z1 = -o.x * sinY + o.z * cosY
+    const y1 = o.y * cosX - z1 * sinX
+    const z2 = o.y * sinX + z1 * cosX
+    return { sx: C + x1 * S0 * k + tx, sy: C - y1 * S0 * k + ty, z2 }
+  }
+
+  // center the camera on a 3D point, zooming to a target depth
+  const centerOn = (x, y, z, nk) => {
+    const cosY = Math.cos(rotY * D2R), sinY = Math.sin(rotY * D2R)
+    const cosX = Math.cos(rotX * D2R), sinX = Math.sin(rotX * D2R)
+    const x1 = x * cosY + z * sinY
+    const z1 = -x * sinY + z * cosY
+    const y1 = y * cosX - z1 * sinX
+    const S = S0 * nk
+    setK(clamp(nk, MIN_K, MAX_K))
+    setTx(-x1 * S)
+    setTy(y1 * S)
+  }
+
+  const focusObject = (o) => {
+    const dist = Math.hypot(o.x, o.y, o.z) || 0.001
+    const nk = clamp(o.focusK ?? (C * 0.5) / (S0 * dist), 1.2, MAX_K)
+    centerOn(o.x, o.y, o.z, nk)
+  }
+  const focusPoint = (x, y, z, nk) => centerOn(x, y, z, nk)
+  const reset = () => {
+    setRotY(view.rotY)
+    setRotX(view.rotX)
+    setK(view.k)
+    setTx(0)
+    setTy(0)
+  }
+  const zoomBy = (f) => {
+    setK((prev) => {
+      const nk = clamp(prev * f, MIN_K, MAX_K)
+      const S = S0 * prev
+      const Sn = S0 * nk
+      const wx = (C - C - tx) / S
+      const wy = (C - C - ty) / S
+      setTx(-wx * Sn)
+      setTy(wy * Sn)
+      return nk
+    })
+  }
+
+  useImperativeHandle(ref, () => ({ focusObject, focusPoint, reset, zoomBy }))
 
   useEffect(() => {
     const el = svgRef.current
@@ -113,7 +196,6 @@ export default function Cosmos3D({
       const uy = ((e.clientY - rect.top) / rect.height) * V
       setK((prev) => {
         const nk = clamp(prev * Math.exp(-e.deltaY * 0.0015), MIN_K, MAX_K)
-        // keep the world point under the cursor fixed (cursor-anchored zoom)
         const S = S0 * prev
         const wx = (ux - C - tx) / S
         const wy = (uy - C - ty) / S
@@ -138,8 +220,8 @@ export default function Cosmos3D({
       const dy = e.clientY - d.y
       if (Math.abs(dx) + Math.abs(dy) > 3) d.moved = true
       if (d.pan) {
-        setTx(clamp(d.txx + dx, -V * 6, V * 6))
-        setTy(clamp(d.tyy + dy, -V * 6, V * 6))
+        setTx(clamp(d.txx + dx, -V * 8, V * 8))
+        setTy(clamp(d.tyy + dy, -V * 8, V * 8))
       } else {
         setRotY(d.ry + dx * 0.4)
         setRotX(clamp(d.rx + dy * 0.4, -88, 88))
@@ -168,7 +250,7 @@ export default function Cosmos3D({
       const hit = pickAt(ux, uy, true)
       if (hit) {
         if (onSelect) onSelect(hit)
-        focusOn(hit)
+        focusObject(hit)
       }
     }
   }
@@ -178,6 +260,7 @@ export default function Cosmos3D({
     let best = null
     let bestD = thr
     for (const o of objects) {
+      if (o.noPick) continue
       const p = project(o)
       const d = Math.hypot(p.sx - ux, p.sy - uy)
       if (d < bestD) {
@@ -186,42 +269,6 @@ export default function Cosmos3D({
       }
     }
     return best
-  }
-
-  // center the camera on an object and zoom so its neighbourhood fills the view
-  const focusOn = (o) => {
-    const dist = Math.hypot(o.x, o.y, o.z) || 0.01
-    const nk = clamp((C * 0.55) / (S0 * dist), 1.5, MAX_K)
-    const cosY = Math.cos(rotY * D2R), sinY = Math.sin(rotY * D2R)
-    const cosX = Math.cos(rotX * D2R), sinX = Math.sin(rotX * D2R)
-    const x1 = o.x * cosY + o.z * sinY
-    const z1 = -o.x * sinY + o.z * cosY
-    const y1 = o.y * cosX - z1 * sinX
-    const S = S0 * nk
-    setK(nk)
-    setTx(-x1 * S)
-    setTy(y1 * S)
-  }
-
-  const reset = () => {
-    setRotY(view.rotY)
-    setRotX(view.rotX)
-    setK(view.k)
-    setTx(0)
-    setTy(0)
-  }
-  const zoom = (f) => {
-    setK((prev) => {
-      const nk = clamp(prev * f, MIN_K, MAX_K)
-      const S = S0 * prev
-      const Sn = S0 * nk
-      // keep center anchored
-      const wx = (C - C - tx) / S
-      const wy = (C - C - ty) / S
-      setTx(-wx * Sn)
-      setTy(wy * Sn)
-      return nk
-    })
   }
 
   const selProj = selected ? project(selected) : null
@@ -246,12 +293,11 @@ export default function Cosmos3D({
             </radialGradient>
           </defs>
           <rect width={V} height={V} fill="url(#c3dbg)" />
-          {/* fixed background stars (do not rotate) */}
           {BACK_STARS.map((s, i) => (
             <circle key={i} cx={s.x} cy={s.y} r={s.r} fill={s.c} opacity={s.o} />
           ))}
+          <LineLayer lines={lines} rotY={rotY} rotX={rotX} k={k} range={range} tx={tx} ty={ty} />
           <ProjectedLayer objs={objects} rotY={rotY} rotX={rotX} k={k} range={range} tx={tx} ty={ty} />
-          {children}
           {selProj && (
             <circle cx={selProj.sx} cy={selProj.sy} r={Math.max(7, 18 / Math.sqrt(k))} fill="none" stroke="#f2cf5b" strokeWidth={1.4} className="sel-ring" style={{ pointerEvents: 'none' }} />
           )}
@@ -261,20 +307,20 @@ export default function Cosmos3D({
         </svg>
 
         <div className="c3d-controls">
-          <button title="Zoom in" onClick={() => zoom(1.7)}>+</button>
-          <button title="Zoom out" onClick={() => zoom(1 / 1.7)}>−</button>
+          <button title="Zoom in" onClick={() => zoomBy(1.7)}>+</button>
+          <button title="Zoom out" onClick={() => zoomBy(1 / 1.7)}>−</button>
           <button title="Reset view" onClick={reset}>⌂</button>
         </div>
 
         {hover && hover.info && (
-          <div className="c3d-tip">
-            {hover.info.name || 'A light of the deep'}
-          </div>
+          <div className="c3d-tip">{hover.info.name || 'A light of the deep'}</div>
         )}
       </div>
     </div>
   )
-}
+})
+
+export default Cosmos3D
 
 // seeded background starfield (fixed, doesn't rotate — feels like looking at the sky)
 const BACK_STARS = (() => {

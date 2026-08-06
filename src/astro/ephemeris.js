@@ -194,6 +194,54 @@ export function vectorToEcl(vec) {
   return { lon, lat, r }
 }
 
+// ── orbit rings (for 3D maps) ────────────────────────────────
+export function planetElements(planet, T) {
+  const el = PLANET_ELEMENTS[planet]
+  const q = (key) => el[key][0] + el[key][1] * T
+  const lp = norm360(q('lp'))
+  const om = norm360(q('ln'))
+  return {
+    a: q('a'),
+    e: q('e'),
+    I: norm360(q('I')),
+    om,
+    w: norm360(lp - om), // argument of perihelion
+  }
+}
+
+// points along a Keplerian orbit, in heliocentric ecliptic cartesian (AU)
+export function orbitRingPoints(el, n = 96) {
+  const a = Math.abs(parseFloat(el.a) || 1)
+  const e = Math.max(0, Math.min(0.99, parseFloat(el.e) || 0))
+  const I = parseFloat(el.I ?? el.i) || 0
+  const om = parseFloat(el.om) || 0
+  const w = parseFloat(el.w) || 0
+  const cw = Math.cos(w * D2R), sw = Math.sin(w * D2R)
+  const cO = Math.cos(om * D2R), sO = Math.sin(om * D2R)
+  const ci = Math.cos(I * D2R), si = Math.sin(I * D2R)
+  const pts = []
+  for (let i = 0; i < n; i++) {
+    const nu = (i / n) * 2 * Math.PI
+    const r = (a * (1 - e * e)) / (1 + e * Math.cos(nu))
+    const xp = r * Math.cos(nu)
+    const yp = r * Math.sin(nu)
+    const x = xp * (cO * cw - sO * sw * ci) - yp * (cO * sw + sO * cw * ci)
+    const y = xp * (sO * cw + cO * sw * ci) - yp * (sO * sw - cO * cw * ci)
+    const z = xp * (sw * si) + yp * (cw * si)
+    pts.push([x, y, z])
+  }
+  return pts
+}
+
+export function planetOrbitPoints(planet, dateStr, n = 96) {
+  const T = (dateToJD(dateStr) - 2451545.0) / 36525
+  return orbitRingPoints(planetElements(planet, T), n)
+}
+
+export function smallBodyOrbitPoints(el, n = 96) {
+  return orbitRingPoints(el, n)
+}
+
 // Geocentric Sun (from Earth's heliocentric position)
 export function sunPosition(dateStr) {
   const jd = dateToJD(dateStr)

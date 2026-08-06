@@ -33,7 +33,7 @@ function starSize(mag) {
 }
 
 // ── the four views ───────────────────────────────────────────
-function MilkyWayView({ selected, setSelected, setHover }) {
+function MilkyWayView({ selected, setSelected }) {
   const objects = useMemo(() => {
     const list = []
     // real stars (pc -> kpc, Sun at origin)
@@ -92,7 +92,7 @@ function MilkyWayView({ selected, setSelected, setHover }) {
   )
 }
 
-function LocalGroupView({ selected, setSelected, setHover }) {
+function LocalGroupView({ selected, setSelected }) {
   const objects = useMemo(() => {
     return LOCAL_GROUP.map((g) => {
       const xyz = g.dist === 0 ? { x: 0, y: 0, z: 0 } : raDecDistToXYZ(g.ra, g.dec, g.dist)
@@ -122,7 +122,7 @@ function LocalGroupView({ selected, setSelected, setHover }) {
   )
 }
 
-function UniverseView({ selected, setSelected, setHover }) {
+function UniverseView({ selected, setSelected }) {
   const objects = useMemo(() => {
     const list = []
     const zColor = (z) => {
@@ -309,13 +309,12 @@ function InfoRow({ k, v }) {
 // ── main ─────────────────────────────────────────────────────
 export default function CosmosMap({ view = 'milkyway' }) {
   const [selected, setSelected] = useState(null)
-  const [hover, setHover] = useState(null)
 
   return (
     <div className="cosmos">
-      {view === 'milkyway' && <MilkyWayView selected={selected} setSelected={setSelected} setHover={setHover} />}
-      {view === 'local-group' && <LocalGroupView selected={selected} setSelected={setSelected} setHover={setHover} />}
-      {view === 'universe' && <UniverseView selected={selected} setSelected={setSelected} setHover={setHover} />}
+      {view === 'milkyway' && <MilkyWayView selected={selected} setSelected={setSelected} />}
+      {view === 'local-group' && <LocalGroupView selected={selected} setSelected={setSelected} />}
+      {view === 'universe' && <UniverseView selected={selected} setSelected={setSelected} />}
       {view === 'multiverse' && <MultiverseView selected={selected} setSelected={setSelected} />}
       {view !== 'multiverse' && <CosmosInfo obj={selected} onClose={() => setSelected(null)} />}
     </div>

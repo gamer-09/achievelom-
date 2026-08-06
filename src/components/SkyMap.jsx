@@ -1,4 +1,5 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import Cosmos3D from './Cosmos3D.jsx'
 import starsJson from '../data/stars.json'
 import messierJson from '../data/messier.json'
 import constellationsJson from '../data/constellations.json'
@@ -9,21 +10,19 @@ import {
   allBodies, eclipticPath, milkyWayPath, formatRA, formatDec, todayUTC, smallBodyPosition,
 } from '../astro/ephemeris.js'
 
-// ── constants ────────────────────────────────────────────────
-const W = 360
-const H = 180
-const FACTOR = 2.8
-const MIN_K = 0.8
-const MAX_K = 320
+const D2R = Math.PI / 180
 
-const MAG_PX = [
-  { max: 1.2, px: 3.6 },
-  { max: 2.2, px: 3.0 },
-  { max: 3.2, px: 2.5 },
-  { max: 4.2, px: 2.0 },
-  { max: 5.2, px: 1.6 },
-  { max: 9.9, px: 1.2 },
-]
+// RA/Dec (degrees) -> point on a sphere of radius r (x toward RA 0h, z toward north pole)
+const sphere = (ra, dec, r = 1) => {
+  const a = ra * D2R
+  const d = dec * D2R
+  return {
+    x: r * Math.cos(d) * Math.cos(a),
+    y: r * Math.cos(d) * Math.sin(a),
+    z: r * Math.sin(d),
+  }
+}
+
 const SPECT_COLOR = {
   O: '#a8b6ff', B: '#9db4ff', A: '#d6e4f7', F: '#f2ecd8',
   G: '#f7dc9e', K: '#e8b078', M: '#d98a7a',
@@ -31,7 +30,7 @@ const SPECT_COLOR = {
 const SPEC_DEFAULT = '#e9e4da'
 
 const BODY_STYLE = {
-  sun: { color: '#f2cf5b', r: 5.0, name: 'The Sun' },
+  sun: { color: '#f2cf5b', r: 5.2, name: 'The Sun' },
   moon: { color: '#cfd4da', r: 3.4, name: 'The Moon' },
   mercury: { color: '#b9a89a', r: 2.4, name: 'Mercury' },
   venus: { color: '#e8c96a', r: 3.2, name: 'Venus' },
@@ -42,7 +41,6 @@ const BODY_STYLE = {
   neptune: { color: '#5a8fc9', r: 3.0, name: 'Neptune' },
 }
 
-// facts for the moving small bodies
 const SB_FACTS = {
   Ceres: ['1 Ceres', 'The first asteroid found (1801) — now classed a dwarf planet, 940 km across, the largest of the main-belt worlds.'],
   Vesta: ['4 Vesta', 'The brightest asteroid — 525 km wide, with a giant impact basin at its south pole; NASA\'s Dawn orbited it 2011–2012.'],
@@ -71,356 +69,14 @@ const SB_FACTS = {
 const LAYER_DEFAULTS = Object.fromEntries(SPECIAL_LAYERS.map((l) => [l.key, true]))
 LAYER_DEFAULTS.smallbodies = true
 
-const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
-
-function splitSeg(pts) {
-  const out = []
-  let cur = [pts[0]]
-  for (let i = 1; i < pts.length; i++) {
-    const p = pts[i]
-    if (Math.abs(p[0] - pts[i - 1][0]) > 180) {
-      out.push(cur)
-      cur = []
-    }
-    cur.push(p)
-  }
-  if (cur.length) out.push(cur)
-  return out
+const starSize = (mag) => {
+  if (mag <= 1.2) return 2.6
+  if (mag <= 2.5) return 2.2
+  if (mag <= 4.0) return 1.8
+  if (mag <= 5.5) return 1.4
+  return 1.0
 }
 
-function buildStarPaths(stars, k, showAll) {
-  const colorKeys = Object.keys(SPECT_COLOR)
-  const buckets = Array.from({ length: colorKeys.length + 1 }, () => Array.from({ length: 6 }, () => []))
-  const w = 2 / (FACTOR * k)
-  for (const s of stars) {
-    const [hip, ra, dec, mag] = s
-    if (!showAll && mag > 6.5) continue
-    let b = 5
-    for (let i = 0; i < MAG_PX.length; i++) {
-      if (mag <= MAG_PX[i].max) { b = i; break }
-    }
-    let ck = colorKeys.length
-    const ch = s[5] ? s[5][0].toUpperCase() : ''
-    const idx = colorKeys.indexOf(ch)
-    if (idx >= 0) ck = idx
-    buckets[ck][b].push(`M${ra.toFixed(2)} ${dec.toFixed(2)}l${w} 0`)
-  }
-  const paths = []
-  for (let c = 0; c <= colorKeys.length; c++) {
-    for (let b = 0; b < 6; b++) {
-      const arr = buckets[c][b]
-      if (!arr.length) continue
-      paths.push({
-        color: c < colorKeys.length ? SPECT_COLOR[colorKeys[c]] : SPEC_DEFAULT,
-        px: MAG_PX[b].px,
-        d: arr.join(''),
-      })
-    }
-  }
-  return paths
-}
-
-// ── the static map layers ────────────────────────────────────
-const MapLayers = memo(function MapLayers(props) {
-  const {
-    k, stars, starPaths, messier, constellations, conSegs, bodyList,
-    bandD, eclD, showLines, showNames, showDeep, showGrid,
-    cosmic, smalls, layers,
-  } = props
-  const sw = (px) => px / (FACTOR * k)
-  const fs = (px) => px / (FACTOR * k)
-  const L = layers
-
-  const gridLines = []
-  if (showGrid) {
-    for (let ra = 0; ra < 360; ra += 15) gridLines.push({ type: 'ra', x: ra })
-    for (let dec = -75; dec <= 75; dec += 15) gridLines.push({ type: 'dec', y: dec })
-  }
-
-  const showConstLabels = showNames && k >= 1.6
-  const showStarLabels = showNames && k >= 1.4
-  const showMessierLabels = showNames && k >= 2.4
-  const starLabelVisible = (mag) =>
-    mag <= 1.0 || (mag <= 2.5 && k >= 1.4) || (mag <= 3.5 && k >= 2.2) || (mag <= 4.2 && k >= 4)
-
-  const cosmicStyle = (cat) => {
-    const s = SPECIAL_LAYERS.find((x) => x.key === cat)
-    return s ? s.color : '#d4af37'
-  }
-
-  return (
-    <g>
-      <path d={bandD} fill="rgba(200,220,240,0.055)" stroke="none" />
-      <path d={eclD} fill="none" stroke="rgba(242,207,91,0.4)" strokeWidth={sw(1)} strokeDasharray={`${sw(2)} ${sw(2)}`} />
-
-      {showGrid && (
-        <g>
-          {gridLines.map((g, i) =>
-            g.type === 'ra' ? (
-              <line key={i} x1={g.x} y1={-90} x2={g.x} y2={90} stroke="rgba(212,175,55,0.12)" strokeWidth={sw(0.7)} />
-            ) : (
-              <line key={i} x1={0} y1={g.y} x2={360} y2={g.y} stroke="rgba(212,175,55,0.12)" strokeWidth={sw(0.7)} />
-            )
-          )}
-          {Array.from({ length: 24 }, (_, h) => (
-            <text key={'h' + h} x={h * 15} y={-86} textAnchor="middle" fontSize={fs(8)} fill="rgba(179,162,124,0.7)" style={{ fontFamily: `'Cinzel', serif` }}>
-              {h}h
-            </text>
-          ))}
-        </g>
-      )}
-
-      {showLines && (
-        <g fill="none" stroke="rgba(212,175,55,0.4)" strokeWidth={sw(1)}>
-          {conSegs.map((c, i) => (
-            <polyline key={i} points={c.seg.map((p) => `${p[0]},${p[1]}`).join(' ')} strokeLinejoin="round" />
-          ))}
-        </g>
-      )}
-
-      <g>
-        {starPaths.map((p, i) => (
-          <path key={i} d={p.d} stroke={p.color} strokeWidth={sw(p.px)} strokeLinecap="round" opacity={0.95} />
-        ))}
-      </g>
-
-      {showStarLabels && (
-        <g>
-          {stars.map((s) => {
-            if (!s[6] || !starLabelVisible(s[3])) return null
-            return (
-              <text
-                key={s[0] || s[1] + "_" + s[2] + "_" + s[6] + "_" + s[3]}
-                x={s[1]} y={s[2] - sw(s[3] <= 1 ? 6 : 8)}
-                textAnchor="middle" fontSize={fs(s[3] <= 1 ? 9.5 : 8)}
-                fill="rgba(233,220,192,0.85)"
-                style={{ fontFamily: `'EB Garamond', serif`, fontStyle: 'italic', pointerEvents: 'none' }}
-              >
-                {s[6]}
-              </text>
-            )
-          })}
-        </g>
-      )}
-
-      {showConstLabels && (
-        <g>
-          {constellations.map((c, ci) => (
-            <text key={`${c.id}-${ci}`} x={c.center[0]} y={c.center[1]} textAnchor="middle" fontSize={fs(10)} fill="rgba(212,175,55,0.65)" style={{ fontFamily: `'Cinzel', serif`, letterSpacing: '0.12em' }}>
-              {c.name.toUpperCase()}
-            </text>
-          ))}
-        </g>
-      )}
-
-      {showDeep && (
-        <g>
-          {messier.map((m) => {
-            const isGal = /galax/i.test(m.type)
-            const isNeb = /nebula|remnant|region/i.test(m.type)
-            const col = isGal ? '#d4af37' : isNeb ? '#7fb3c9' : '#d8a0c0'
-            const r = sw(2.5)
-            return (
-              <g key={m.m}>
-                <circle cx={m.ra} cy={m.dec} r={r} fill="none" stroke={col} strokeWidth={sw(1.1)} opacity={0.9} />
-                <circle cx={m.ra} cy={m.dec} r={sw(0.7)} fill={col} opacity={0.8} />
-                {showMessierLabels && (
-                  <text x={m.ra} y={m.dec - r - sw(2)} textAnchor="middle" fontSize={fs(7.5)} fill={col} style={{ fontFamily: `'EB Garamond', serif`, pointerEvents: 'none' }}>
-                    M{m.m}{m.name ? ' · ' + m.name : ''}
-                  </text>
-                )}
-              </g>
-            )
-          })}
-        </g>
-      )}
-
-      <g>
-        {bodyList.map((b) => (
-          <g key={b.id}>
-            <circle cx={b.ra} cy={b.dec} r={sw(b.r)} fill={b.color} opacity={0.95} stroke="rgba(10,18,32,0.9)" strokeWidth={sw(1.2)} />
-            {b.id === 'sun' && <circle cx={b.ra} cy={b.dec} r={sw(b.r + 1.6)} fill="none" stroke="rgba(242,207,91,0.5)" strokeWidth={sw(0.8)} />}
-            {b.id === 'saturn' && (
-              <ellipse cx={b.ra} cy={b.dec} rx={sw(b.r + 2.2)} ry={sw(b.r * 0.55)} fill="none" stroke="rgba(232,213,163,0.6)" strokeWidth={sw(0.8)} transform={`rotate(-20 ${b.ra} ${b.dec})`} />
-            )}
-            {showNames && (
-              <text x={b.ra} y={b.dec - sw(b.r + 3)} textAnchor="middle" fontSize={fs(9)} fill={b.color} style={{ fontFamily: `'Cinzel', serif`, pointerEvents: 'none' }}>
-                {b.name}
-              </text>
-            )}
-          </g>
-        ))}
-      </g>
-
-      <g>
-        {SHOWERS.map((s) => (
-          <g key={s.id}>
-            <line x1={s.ra - sw(4)} y1={s.dec - sw(3)} x2={s.ra + sw(2)} y2={s.dec + sw(1.5)} stroke="rgba(255,217,160,0.9)" strokeWidth={sw(1.4)} />
-            <circle cx={s.ra + sw(2)} cy={s.dec + sw(1.5)} r={sw(0.9)} fill="#ffd9a0" />
-            {showNames && (
-              <text x={s.ra + sw(5)} y={s.dec + sw(3)} fontSize={fs(8)} fill="rgba(255,217,160,0.85)" style={{ fontFamily: `'EB Garamond', serif`, fontStyle: 'italic', pointerEvents: 'none' }}>
-                {s.name}
-              </text>
-            )}
-          </g>
-        ))}
-      </g>
-
-      {/* small bodies (computed positions) */}
-      {L.smallbodies && (
-        <g>
-          {smalls.map((s) => {
-            const col = s.kind === 'comet' ? '#9fe3ff' : s.kind === 'dwarf' ? '#e0d5b0' : '#c9b98a'
-            const r = sw(s.kind === 'dwarf' ? 2.4 : s.kind === 'comet' ? 2.0 : 1.6)
-            return (
-              <g key={s.key}>
-                <circle cx={s.ra} cy={s.dec} r={r} fill="none" stroke={col} strokeWidth={sw(1.1)} opacity={0.95} />
-                <circle cx={s.ra} cy={s.dec} r={sw(0.6)} fill={col} opacity={0.9} />
-                {s.kind === 'comet' && (
-                  <path d={`M${s.ra} ${s.dec} l${sw(-4)} ${sw(2.4)}`} stroke={col} strokeWidth={sw(1)} fill="none" opacity={0.7} />
-                )}
-                {showNames && k >= 2.2 && (
-                  <text x={s.ra} y={s.dec - r - sw(2)} textAnchor="middle" fontSize={fs(7)} fill={col} style={{ fontFamily: `'EB Garamond', serif`, fontStyle: 'italic', pointerEvents: 'none' }}>
-                    {s.short}
-                  </text>
-                )}
-              </g>
-            )
-          })}
-        </g>
-      )}
-
-      {/* cosmic objects */}
-      {SPECIAL_LAYERS.map((layer) => {
-        if (!L[layer.key]) return null
-        const items = cosmic[layer.key] || []
-        const col = layer.color
-        const showLabel = showNames && k >= 2.2
-        return (
-          <g key={layer.key}>
-            {items.map((it) => {
-              if (layer.key === 'blackholes') {
-                return (
-                  <g key={it.id}>
-                    <circle cx={it.ra} cy={it.dec} r={sw(2.6)} fill="#05070d" stroke={col} strokeWidth={sw(1.2)} />
-                    <circle cx={it.ra} cy={it.dec} r={sw(0.9)} fill={col} />
-                    <circle cx={it.ra} cy={it.dec} r={sw(3.6)} fill="none" stroke="rgba(212,175,55,0.35)" strokeWidth={sw(0.6)} strokeDasharray={`${sw(1)} ${sw(1.4)}`} />
-                    {showLabel && (
-                      <text x={it.ra} y={it.dec - sw(5)} textAnchor="middle" fontSize={fs(8)} fill={col} style={{ fontFamily: `'Cinzel', serif`, pointerEvents: 'none' }}>
-                        {it.name}
-                      </text>
-                    )}
-                  </g>
-                )
-              }
-              if (layer.key === 'pulsars') {
-                return (
-                  <g key={it.id}>
-                    <circle cx={it.ra} cy={it.dec} r={sw(2)} fill="none" stroke={col} strokeWidth={sw(1)} />
-                    <circle cx={it.ra} cy={it.dec} r={sw(0.7)} fill={col} />
-                    <path d={`M${it.ra - sw(3)} ${it.dec} h${sw(6)} M${it.ra} ${it.dec - sw(3)} v${sw(6)}`} stroke={col} strokeWidth={sw(0.7)} opacity={0.8} />
-                    {showLabel && (
-                      <text x={it.ra} y={it.dec - sw(4.5)} textAnchor="middle" fontSize={fs(7.5)} fill={col} style={{ fontFamily: `'EB Garamond', serif`, fontStyle: 'italic', pointerEvents: 'none' }}>
-                        {it.name}
-                      </text>
-                    )}
-                  </g>
-                )
-              }
-              if (layer.key === 'quasars') {
-                return (
-                  <g key={it.id}>
-                    <path d={`M${it.ra - sw(3.4)} ${it.dec} L${it.ra + sw(3.4)} ${it.dec} M${it.ra} ${it.dec - sw(3.4)} L${it.ra} ${it.dec + sw(3.4)}`} stroke={col} strokeWidth={sw(0.9)} />
-                    <circle cx={it.ra} cy={it.dec} r={sw(1.1)} fill={col} />
-                    {showLabel && (
-                      <text x={it.ra} y={it.dec - sw(4.5)} textAnchor="middle" fontSize={fs(7.5)} fill={col} style={{ fontFamily: `'EB Garamond', serif`, fontStyle: 'italic', pointerEvents: 'none' }}>
-                        {it.name}
-                      </text>
-                    )}
-                  </g>
-                )
-              }
-              if (layer.key === 'snr') {
-                return (
-                  <g key={it.id}>
-                    <circle cx={it.ra} cy={it.dec} r={sw(2.6)} fill="none" stroke={col} strokeWidth={sw(1)} strokeDasharray={`${sw(1.4)} ${sw(1)}`} />
-                    <circle cx={it.ra} cy={it.dec} r={sw(0.6)} fill={col} />
-                    {showLabel && (
-                      <text x={it.ra} y={it.dec - sw(4.8)} textAnchor="middle" fontSize={fs(7.5)} fill={col} style={{ fontFamily: `'EB Garamond', serif`, fontStyle: 'italic', pointerEvents: 'none' }}>
-                        {it.name}
-                      </text>
-                    )}
-                  </g>
-                )
-              }
-              if (layer.key === 'galaxies' || layer.key === 'dwarfs') {
-                const big = layer.key === 'galaxies'
-                return (
-                  <g key={it.id}>
-                    <ellipse
-                      cx={it.ra} cy={it.dec} rx={sw(big ? 3 : 2)} ry={sw(big ? 1.4 : 1)}
-                      fill={big ? 'none' : col}
-                      fillOpacity={big ? 0 : 0.35}
-                      stroke={col} strokeWidth={sw(0.9)}
-                      transform={`rotate(${30 * (it.id.charCodeAt(0) % 3) - 30} ${it.ra} ${it.dec})`}
-                    />
-                    <circle cx={it.ra} cy={it.dec} r={sw(0.6)} fill={col} />
-                    {showLabel && (
-                      <text x={it.ra} y={it.dec - sw(big ? 5 : 4)} textAnchor="middle" fontSize={fs(big ? 8 : 7)} fill={col} style={{ fontFamily: `'EB Garamond', serif`, fontStyle: 'italic', pointerEvents: 'none' }}>
-                        {it.name}
-                      </text>
-                    )}
-                  </g>
-                )
-              }
-              if (layer.key === 'exoplanets') {
-                return (
-                  <g key={it.id}>
-                    <circle cx={it.ra} cy={it.dec} r={sw(2.4)} fill="none" stroke={col} strokeWidth={sw(0.8)} />
-                    <circle cx={it.ra + sw(1.6)} cy={it.dec} r={sw(0.7)} fill={col} />
-                    <circle cx={it.ra} cy={it.dec} r={sw(0.8)} fill={col} opacity={0.6} />
-                    {showLabel && (
-                      <text x={it.ra} y={it.dec - sw(4.4)} textAnchor="middle" fontSize={fs(7.5)} fill={col} style={{ fontFamily: `'EB Garamond', serif`, fontStyle: 'italic', pointerEvents: 'none' }}>
-                        {it.name}
-                      </text>
-                    )}
-                  </g>
-                )
-              }
-              if (layer.key === 'clusters') {
-                return (
-                  <g key={it.id}>
-                    <circle cx={it.ra} cy={it.dec} r={sw(3)} fill="none" stroke={col} strokeWidth={sw(0.8)} strokeDasharray={`${sw(0.8)} ${sw(1.4)}`} />
-                    <circle cx={it.ra} cy={it.dec} r={sw(0.7)} fill={col} />
-                    {showLabel && (
-                      <text x={it.ra} y={it.dec - sw(5)} textAnchor="middle" fontSize={fs(7.5)} fill={col} style={{ fontFamily: `'EB Garamond', serif`, fontStyle: 'italic', pointerEvents: 'none' }}>
-                        {it.name}
-                      </text>
-                    )}
-                  </g>
-                )
-              }
-              // specials
-              return (
-                <g key={it.id}>
-                  <rect x={it.ra - sw(1.8)} y={it.dec - sw(1.8)} width={sw(3.6)} height={sw(3.6)} transform={`rotate(45 ${it.ra} ${it.dec})`} fill="none" stroke={col} strokeWidth={sw(0.9)} />
-                  <circle cx={it.ra} cy={it.dec} r={sw(0.7)} fill={col} />
-                  {showLabel && (
-                    <text x={it.ra} y={it.dec - sw(4.4)} textAnchor="middle" fontSize={fs(7.5)} fill={col} style={{ fontFamily: `'EB Garamond', serif`, fontStyle: 'italic', pointerEvents: 'none' }}>
-                      {it.name}
-                    </text>
-                  )}
-                </g>
-              )
-            })}
-          </g>
-        )
-      })}
-    </g>
-  )
-})
-
-// ── main component ───────────────────────────────────────────
 export default function SkyMap({ initialQuery = '' }) {
   const [dateStr] = useState(() => todayUTC())
   const bodies = useMemo(() => allBodies(dateStr), [dateStr])
@@ -435,31 +91,18 @@ export default function SkyMap({ initialQuery = '' }) {
   const cosmic = useMemo(() => COSMIC, [])
   const allCosmic = useMemo(() => flattenCosmic(), [])
 
-  // computed small-body positions for the chosen date
   const smalls = useMemo(() => {
     return Object.entries(smallbodiesJson).map(([key, el]) => {
       const pos = smallBodyPosition(el, dateStr)
       const [short, fact] = SB_FACTS[key] || [el.name.split(' ').slice(-1)[0] || key, '']
       return {
-        key,
-        name: el.name,
-        short,
-        kind: el.kind,
-        class: el.class,
-        fact,
-        period: el.period,
-        ra: pos.ra,
-        dec: pos.dec,
-        distAU: pos.distAU,
-        r: pos.helioR,
-        helioLon: pos.helioLon,
-        helioLat: pos.helioLat,
+        key, name: el.name, short, kind: el.kind, class: el.class, fact, period: el.period,
+        ra: pos.ra, dec: pos.dec, distAU: pos.distAU, r: pos.helioR,
+        helioLon: pos.helioLon, helioLat: pos.helioLat,
       }
     })
   }, [dateStr])
 
-  const [k, setK] = useState(1)
-  const [center, setCenter] = useState({ x: 180, y: 20 })
   const [showAll, setShowAll] = useState(false)
   const [showLines, setShowLines] = useState(true)
   const [showNames, setShowNames] = useState(true)
@@ -467,57 +110,144 @@ export default function SkyMap({ initialQuery = '' }) {
   const [showGrid, setShowGrid] = useState(true)
   const [layers, setLayers] = useState(LAYER_DEFAULTS)
   const [selected, setSelected] = useState(null)
-  const [tooltip, setTooltip] = useState(null)
-  const [tipPos, setTipPos] = useState({ x: 50, y: 20 })
   const [query, setQuery] = useState(initialQuery || '')
 
-  const svgRef = useRef(null)
-  const dragRef = useRef(null)
-  const tooltipFrame = useRef(null)
-  useEffect(() => () => tooltipFrame.current && cancelAnimationFrame(tooltipFrame.current), [])
+  const viewerRef = useRef(null)
 
-  const starPaths = useMemo(() => buildStarPaths(stars, k, showAll), [stars, k, showAll])
-
-  const bandD = useMemo(() => {
-    const pts = milkyWayPath()
-    return pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.ra.toFixed(2)} ${p.dec.toFixed(2)}`).join('') + 'Z'
-  }, [])
-  const eclD = useMemo(() => {
-    const pts = eclipticPath()
-    return pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.ra.toFixed(2)} ${p.dec.toFixed(2)}`).join('')
-  }, [])
-
-  const conSegs = useMemo(() => {
-    const out = []
-    for (const c of constellations) {
-      for (const seg of c.lines) {
-        for (const part of splitSeg(seg)) out.push({ cid: c.id, name: c.name, desig: c.desig, seg: part })
+  // ── objects on the celestial sphere ────────────────────────
+  const objects = useMemo(() => {
+    const list = []
+    // stars: radius varies subtly with magnitude for parallax depth
+    for (const s of stars) {
+      const [hip, ra, dec, mag, dist, spect, proper, bayer] = s
+      if (!showAll && mag > 6.5) continue
+      const rr = 1 - 0.035 * Math.min(1, Math.max(0, mag / 7))
+      const p = sphere(ra, dec, rr)
+      const oid = 'star-' + (hip || `${ra}_${dec}_${mag}`)
+      list.push({
+        id: oid, oid, ...p,
+        r: starSize(mag), color: SPECT_COLOR[spect ? spect[0].toUpperCase() : ''] || SPEC_DEFAULT,
+        kind: 'dot', focusK: 7, noPick: false,
+        info: { kind: 'star', star: s, name: proper || bayer || `Star HIP ${hip || '?'}`, mag, dist: s[4], spect },
+      })
+    }
+    // the Milky Way band (decorative dots along the galactic plane)
+    for (const pt of milkyWayPath(3)) {
+      const p = sphere(pt.ra, pt.dec, 1)
+      list.push({ id: 'mw-' + p.x.toFixed(2) + '-' + p.y.toFixed(2), ...p, r: 0.9, color: 'rgba(200,220,240,0.4)', kind: 'dot', noPick: true })
+    }
+    // Messier objects
+    for (const m of messier) {
+      const isGal = /galax/i.test(m.type)
+      const isNeb = /nebula|remnant|region/i.test(m.type)
+      const col = isGal ? '#d4af37' : isNeb ? '#7fb3c9' : '#d8a0c0'
+      const p = sphere(m.ra, m.dec, 1.05)
+      list.push({
+        id: 'm' + m.m, oid: 'm' + m.m, ...p,
+        r: 2.6, color: col, kind: 'glyph', shape: 'circle', focusK: 7, labelK: 2.6,
+        label: `M${m.m}${m.name ? ' · ' + m.name : ''}`,
+        info: { kind: 'messier', messier: m, name: `M${m.m}${m.name ? ' — ' + m.name : ''}` },
+      })
+    }
+    // planets, sun, moon (float slightly above the stars)
+    for (const b of bodyList) {
+      const p = sphere(b.ra, b.dec, 1.07)
+      list.push({
+        id: 'body-' + b.id, oid: 'body-' + b.id, ...p,
+        r: b.r, color: b.color, kind: 'glyph', shape: 'circle', focusK: 7, labelK: 1.2,
+        label: b.name,
+        info: { kind: 'body', body: b, name: b.name },
+      })
+    }
+    // meteor shower radiants
+    for (const s of SHOWERS) {
+      const p = sphere(s.ra, s.dec, 1.04)
+      list.push({
+        id: 'shower-' + s.id, oid: 'shower-' + s.id, ...p,
+        r: 2.0, color: '#ffd9a0', kind: 'glyph', shape: 'cross', focusK: 7, labelK: 2.2,
+        label: s.name, info: { kind: 'shower', shower: s, name: s.name },
+      })
+    }
+    // small bodies (dwarf planets, asteroids, comets)
+    if (layers.smallbodies) {
+      for (const s of smalls) {
+        const col = s.kind === 'comet' ? '#9fe3ff' : s.kind === 'dwarf' ? '#e0d5b0' : '#c9b98a'
+        const p = sphere(s.ra, s.dec, 1.03)
+        list.push({
+          id: 'small-' + s.key, oid: 'small-' + s.key, ...p,
+          r: s.kind === 'dwarf' ? 2.4 : s.kind === 'comet' ? 2.0 : 1.6,
+          color: col, kind: 'glyph', shape: 'circle', focusK: 7, labelK: 3.0,
+          label: s.short, info: { kind: 'small', s, name: s.name },
+        })
       }
     }
-    return out
-  }, [constellations])
+    // cosmic objects (black holes, pulsars, quasars, etc.)
+    for (const layer of SPECIAL_LAYERS) {
+      if (!layers[layer.key]) continue
+      for (const it of (cosmic[layer.key] || [])) {
+        const p = sphere(it.ra, it.dec, 1.02)
+        const shape = layer.key === 'blackholes' ? 'ring' : layer.key === 'pulsars' || layer.key === 'quasars' ? 'cross' : 'circle'
+        list.push({
+          id: layer.key + '-' + it.id, oid: layer.key + '-' + it.id, ...p,
+          r: 2.2, color: layer.color, kind: 'glyph', shape, focusK: 7, labelK: 2.8,
+          label: it.name, info: { kind: 'cosmic', it, name: it.name },
+        })
+      }
+    }
+    return list
+  }, [stars, messier, bodyList, smalls, allCosmic, cosmic, layers, showAll])
 
-  const flyTo = (ra, dec, targetK) => {
-    setK(clamp(targetK, MIN_K, MAX_K))
-    setCenter({ x: ra, y: clamp(dec, -84, 84) })
-  }
+  // ── 3D lines: constellations, equator, ecliptic ────────────
+  const lines = useMemo(() => {
+    const arr = []
+    if (showLines) {
+      for (const c of constellations) {
+        for (const seg of c.lines) {
+          arr.push({
+            id: 'con-' + c.id + '-' + seg[0][0] + seg[0][1],
+            pts: seg.map(([ra, dec]) => {
+              const p = sphere(ra, dec, 1)
+              return [p.x, p.y, p.z]
+            }),
+            color: 'rgba(212,175,55,0.5)', width: 1, opacity: 0.55, maxK: 7,
+          })
+        }
+      }
+    }
+    if (showGrid) {
+      // celestial equator
+      const eq = []
+      for (let i = 0; i <= 72; i++) {
+        const a = (i / 72) * 2 * Math.PI
+        eq.push([Math.cos(a), Math.sin(a), 0])
+      }
+      arr.push({ id: 'equator', pts: eq, color: 'rgba(155,184,217,0.4)', width: 1, opacity: 0.5, maxK: 7 })
+      // ecliptic (tilted 23.4°)
+      const ecl = eclipticPath(5).map((p) => {
+        const s = sphere(p.ra, p.dec, 1.01)
+        return [s.x, s.y, s.z]
+      })
+      arr.push({ id: 'ecliptic', pts: ecl, color: 'rgba(242,207,91,0.5)', width: 1, opacity: 0.5, maxK: 7 })
+    }
+    return arr
+  }, [constellations, showLines, showGrid])
 
-  // ── search index ───────────────────────────────────────────
+  // ── search ─────────────────────────────────────────────────
   const searchIndex = useMemo(() => {
     const idx = []
     for (const s of stars) {
       const [hip, ra, dec, mag, dist, spect, proper, bayer] = s
-      if (proper) idx.push({ label: proper, sub: `${bayer || 'star'} · mag ${mag}`, type: 'star', obj: { kind: 'star', star: s, ra, dec } })
+      if (proper) idx.push({ label: proper, sub: `${bayer || 'star'} · mag ${mag}`, oid: 'star-' + (hip || `${ra}_${dec}_${mag}`) })
     }
     for (const m of messier) {
-      idx.push({ label: `M${m.m}${m.name ? ' — ' + m.name : ''}`, sub: `${m.type} · ${m.con}`, type: 'messier', obj: { kind: 'messier', messier: m, ra: m.ra, dec: m.dec } })
-      if (m.ngc) idx.push({ label: `NGC ${m.ngc}`, sub: `M${m.m} · ${m.type}`, type: 'messier', obj: { kind: 'messier', messier: m, ra: m.ra, dec: m.dec } })
+      idx.push({ label: `M${m.m}${m.name ? ' — ' + m.name : ''}`, sub: `${m.type} · ${m.con}`, oid: 'm' + m.m })
+      if (m.ngc) idx.push({ label: `NGC ${m.ngc}`, sub: `M${m.m} · ${m.type}`, oid: 'm' + m.m })
     }
-    for (const b of bodyList) idx.push({ label: b.name, sub: 'wanderer of the court', type: 'body', obj: { kind: 'body', body: b, ra: b.ra, dec: b.dec } })
-    for (const s of SHOWERS) idx.push({ label: s.name, sub: `${s.peak} · ZHR ${s.zhr}`, type: 'shower', obj: { kind: 'shower', shower: s, ra: s.ra, dec: s.dec } })
-    for (const c of constellations) idx.push({ label: c.name, sub: c.desig, type: 'constellation', obj: { kind: 'constellation', c, ra: c.center[0], dec: c.center[1] } })
-    for (const s of smalls) idx.push({ label: s.name, sub: s.kind === 'comet' ? 'comet · computed position' : s.kind === 'dwarf' ? 'dwarf planet · computed position' : 'asteroid · computed position', type: 'small', obj: { kind: 'small', s, ra: s.ra, dec: s.dec } })
-    for (const it of allCosmic) idx.push({ label: it.name, sub: it.type, type: 'cosmic', obj: { kind: 'cosmic', it, ra: it.ra, dec: it.dec } })
+    for (const b of bodyList) idx.push({ label: b.name, sub: 'wanderer of the court', oid: 'body-' + b.id })
+    for (const s of SHOWERS) idx.push({ label: s.name, sub: `${s.peak} · ZHR ${s.zhr}`, oid: 'shower-' + s.id })
+    for (const c of constellations) idx.push({ label: c.name, sub: c.desig, oid: null })
+    for (const s of smalls) idx.push({ label: s.name, sub: s.kind === 'comet' ? 'comet · computed position' : s.kind === 'dwarf' ? 'dwarf planet' : 'asteroid', oid: 'small-' + s.key })
+    for (const it of allCosmic) idx.push({ label: it.name, sub: it.type, oid: (it.cat || 'cosmic') + '-' + it.id })
     return idx
   }, [stars, messier, bodyList, constellations, smalls, allCosmic])
 
@@ -528,8 +258,14 @@ export default function SkyMap({ initialQuery = '' }) {
   }, [query, searchIndex])
 
   const pickResult = (r) => {
-    flyTo(r.obj.ra, r.obj.dec, r.type === 'star' ? 24 : r.type === 'messier' ? 10 : r.type === 'small' ? 4 : r.type === 'body' ? 6 : 8)
-    setSelected(r.obj)
+    const obj = objects.find((o) => o.oid && o.oid === r.oid)
+    if (obj) {
+      viewerRef.current?.focusObject(obj)
+      setSelected(obj)
+    } else if (r.oid === null) {
+      // constellation — just zoom a bit and note it; find nearest constellation glyph? none.
+      viewerRef.current?.reset()
+    }
     setQuery('')
   }
 
@@ -545,105 +281,6 @@ export default function SkyMap({ initialQuery = '' }) {
     if (hit) pickResult(hit)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchIndex])
-
-  // ── geometry ───────────────────────────────────────────────
-  const screenToWorld = (clientX, clientY) => {
-    const el = svgRef.current
-    if (!el) return null
-    const rect = el.getBoundingClientRect()
-    const ux = ((clientX - rect.left) / rect.width) * W
-    const uy = ((clientY - rect.top) / rect.height) * H
-    return { x: (ux - W / 2) / k + center.x, y: (uy - H / 2) / k + center.y }
-  }
-
-  useEffect(() => {
-    const el = svgRef.current
-    if (!el) return
-    const onWheel = (e) => {
-      e.preventDefault()
-      const rect = el.getBoundingClientRect()
-      const ux = ((e.clientX - rect.left) / rect.width) * W
-      const uy = ((e.clientY - rect.top) / rect.height) * H
-      const world = { x: (ux - W / 2) / k + center.x, y: (uy - H / 2) / k + center.y }
-      const nk = clamp(k * Math.exp(-e.deltaY * 0.0018), MIN_K, MAX_K)
-      setK(nk)
-      setCenter({ x: world.x - (ux - W / 2) / nk, y: clamp(world.y - (uy - H / 2) / nk, -90, 90) })
-    }
-    el.addEventListener('wheel', onWheel, { passive: false })
-    return () => el.removeEventListener('wheel', onWheel)
-  }, [k, center])
-
-  const onPointerDown = (e) => {
-    dragRef.current = { x: e.clientX, y: e.clientY, cx: center.x, cy: center.y, moved: false }
-    e.currentTarget.setPointerCapture(e.pointerId)
-  }
-  const onPointerMove = (e) => {
-    const d = dragRef.current
-    if (d) {
-      const dx = e.clientX - d.x
-      const dy = e.clientY - d.y
-      if (Math.abs(dx) + Math.abs(dy) > 3) d.moved = true
-      setCenter({ x: d.cx - dx / (FACTOR * k), y: clamp(d.cy + dy / (FACTOR * k), -90, 90) })
-    } else {
-      if (tooltipFrame.current) return
-      tooltipFrame.current = requestAnimationFrame(() => {
-        tooltipFrame.current = null
-        const el = svgRef.current
-        if (!el) return
-        const rect = el.getBoundingClientRect()
-        const w = screenToWorld(e.clientX, e.clientY)
-        if (!w) return
-        const t = nearest(w.x, w.y)
-        setTipPos({ x: ((e.clientX - rect.left) / rect.width) * 100, y: ((e.clientY - rect.top) / rect.height) * 100 })
-        setTooltip(t)
-      })
-    }
-  }
-  const onPointerUp = (e) => {
-    const d = dragRef.current
-    dragRef.current = null
-    if (d && !d.moved) {
-      const w = screenToWorld(e.clientX, e.clientY)
-      if (w) {
-        const t = nearest(w.x, w.y, true)
-        setSelected(t)
-        if (t) setTooltip(t)
-      }
-    }
-  }
-
-  const nearest = (x, y, click = false) => {
-    const thresh = (click ? 9 : 7) / (FACTOR * k)
-    let best = null
-    let bestD = thresh
-    for (const s of stars) {
-      const dx = s[1] - x
-      const dy = s[2] - y
-      const d2 = dx * dx + dy * dy
-      if (d2 < bestD * bestD) {
-        bestD = Math.sqrt(d2)
-        best = { kind: 'star', star: s, ra: s[1], dec: s[2] }
-      }
-    }
-    if (best) return best
-    const consider = (t, ra, dec) => {
-      const d = Math.hypot(ra - x, dec - y)
-      if (d < bestD) {
-        bestD = d
-        best = t
-      }
-    }
-    for (const m of messier) consider({ kind: 'messier', messier: m, ra: m.ra, dec: m.dec }, m.ra, m.dec)
-    for (const b of bodyList) consider({ kind: 'body', body: b, ra: b.ra, dec: b.dec }, b.ra, b.dec)
-    for (const s of SHOWERS) consider({ kind: 'shower', shower: s, ra: s.ra, dec: s.dec }, s.ra, s.dec)
-    for (const s of smalls) consider({ kind: 'small', s, ra: s.ra, dec: s.dec }, s.ra, s.dec)
-    for (const it of allCosmic) consider({ kind: 'cosmic', it, ra: it.ra, dec: it.dec }, it.ra, it.dec)
-    return bestD < thresh ? best : null
-  }
-
-  const transform = `translate(${W / 2 - center.x * k} ${H / 2 - center.y * k}) scale(${k})`
-  const sw2 = (px) => px / (FACTOR * k)
-  const selWorld = selected ? { ra: selected.ra ?? selected.c?.center?.[0], dec: selected.dec ?? selected.c?.center?.[1] } : null
 
   const toggleLayer = (key) => setLayers((l) => ({ ...l, [key]: !l[key] }))
 
@@ -670,24 +307,17 @@ export default function SkyMap({ initialQuery = '' }) {
           )}
         </div>
 
-        <div className="map-zoom">
-          <button title="Zoom in" onClick={() => setK(clamp(k * 1.6, MIN_K, MAX_K))}>+</button>
-          <button title="Zoom out" onClick={() => setK(clamp(k / 1.6, MIN_K, MAX_K))}>−</button>
-          <button title="Reset view" onClick={() => { setK(1); setCenter({ x: 180, y: 20 }); setSelected(null) }}>⌂</button>
-        </div>
-
         <div className="map-toggles">
           <label className="mt"><input type="checkbox" checked={showLines} onChange={(e) => setShowLines(e.target.checked)} /> lines</label>
           <label className="mt"><input type="checkbox" checked={showNames} onChange={(e) => setShowNames(e.target.checked)} /> names</label>
           <label className="mt"><input type="checkbox" checked={showDeep} onChange={(e) => setShowDeep(e.target.checked)} /> Messier</label>
-          <label className="mt"><input type="checkbox" checked={showGrid} onChange={(e) => setShowGrid(e.target.checked)} /> grid</label>
+          <label className="mt"><input type="checkbox" checked={showGrid} onChange={(e) => setShowGrid(e.target.checked)} /> equator</label>
           <label className="mt" title="also draw the very faint"><input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} /> faint</label>
         </div>
 
         <div className="map-date">⚷ {dateStr}</div>
       </div>
 
-      {/* layer chips */}
       <div className="maptoolbar layer-bar">
         <span className="layer-lbl">The deeper catalog:</span>
         <label className="mt"><input type="checkbox" checked={layers.smallbodies} onChange={() => toggleLayer('smallbodies')} /> small bodies</label>
@@ -698,63 +328,19 @@ export default function SkyMap({ initialQuery = '' }) {
         ))}
       </div>
 
-      <div className="map-canvas">
-        <svg
-          ref={svgRef}
-          viewBox={`0 0 ${W} ${H}`}
-          className="sky-svg"
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerLeave={() => { dragRef.current = null; setTooltip(null) }}
-        >
-          <g transform={transform}>
-            <MapLayers
-              k={k}
-              stars={stars}
-              starPaths={starPaths}
-              messier={messier}
-              constellations={constellations}
-              conSegs={conSegs}
-              bodyList={bodyList}
-              bandD={bandD}
-              eclD={eclD}
-              showLines={showLines}
-              showNames={showNames}
-              showDeep={showDeep}
-              showGrid={showGrid}
-              cosmic={cosmic}
-              smalls={smalls}
-              layers={layers}
-            />
-            {selWorld && (
-              <circle
-                cx={selWorld.ra}
-                cy={selWorld.dec}
-                r={sw2(10)}
-                fill="none"
-                stroke="#f2cf5b"
-                strokeWidth={sw2(1.6)}
-                className="sel-ring"
-                style={{ pointerEvents: 'none' }}
-              />
-            )}
-          </g>
-        </svg>
+      <Cosmos3D
+        ref={viewerRef}
+        objects={objects}
+        lines={lines}
+        range={2.4}
+        unit="the celestial sphere · 1 unit = the sphere's radius"
+        view={{ rotY: -45, rotX: 28, k: 1.6 }}
+        onSelect={setSelected}
+        selected={selected}
+        hint="The celestial sphere in 3D — every star, world, black hole and wonder plotted on the real sphere of the sky (RA/Dec → 3D). Turn the sky to find constellations, click any light to fly to it."
+      />
 
-        {tooltip && !selected && (
-          <div className="map-tooltip" style={{ left: `${tipPos.x}%`, top: `${tipPos.y}%` }}>
-            {tooltip.kind === 'star' && <><b>{tooltip.star[6] || tooltip.star[7] || 'Star'}</b> <span>mag {tooltip.star[3]}</span></>}
-            {tooltip.kind === 'messier' && <><b>M{tooltip.messier.m}</b> <span>{tooltip.messier.name || tooltip.messier.type}</span></>}
-            {tooltip.kind === 'body' && <><b>{tooltip.body.name}</b> <span>planet</span></>}
-            {tooltip.kind === 'shower' && <><b>{tooltip.shower.name}</b> <span>meteor shower</span></>}
-            {tooltip.kind === 'small' && <><b>{tooltip.s.short}</b> <span>{tooltip.s.kind === 'comet' ? 'comet' : tooltip.s.kind === 'dwarf' ? 'dwarf planet' : 'asteroid'}</span></>}
-            {tooltip.kind === 'cosmic' && <><b>{tooltip.it.name}</b> <span>{tooltip.it.type}</span></>}
-          </div>
-        )}
-      </div>
-
-      <InfoPanel selected={selected} onClose={() => setSelected(null)} />
+      <InfoPanel selected={selected} onClose={() => setSelected(null)} showDeep={showDeep} />
     </div>
   )
 }
@@ -773,26 +359,26 @@ const BODY_FACTS = {
 }
 
 function InfoPanel({ selected, onClose }) {
-  if (!selected) {
+  if (!selected || !selected.info) {
     return (
       <aside className="panel map-info empty-info">
         <p className="eyebrow">The chart</p>
         <h3>Touch a light to read it</h3>
         <p>
-          This is a real map of the heavens for <b>{todayUTC()}</b>: {starsJson.meta.count.toLocaleString()} stars,
+          The sky as a 3D sphere for <b>{todayUTC()}</b>: {starsJson.meta.count.toLocaleString()} stars,
           all {messierJson.meta.count} objects of Messier, the wanderers in true positions, 11 meteor showers,
           black holes, pulsars, quasars, supernova remnants, galaxies, exoplanet systems, dwarf planets and
-          comets — every one with its true place and its story. Drag to wander, scroll to descend, click to learn.
+          comets — every one on its true place on the sphere. Turn the sky, zoom, click to learn.
         </p>
       </aside>
     )
   }
 
-  const k = selected.kind
+  const i = selected.info
   const close = <button className="info-close" onClick={onClose}>✕</button>
 
-  if (k === 'star') {
-    const s = selected.star
+  if (i.kind === 'star') {
+    const s = i.star
     return (
       <aside className="panel map-info">
         {close}
@@ -810,8 +396,8 @@ function InfoPanel({ selected, onClose }) {
       </aside>
     )
   }
-  if (k === 'messier') {
-    const m = selected.messier
+  if (i.kind === 'messier') {
+    const m = i.messier
     return (
       <aside className="panel map-info">
         {close}
@@ -829,8 +415,8 @@ function InfoPanel({ selected, onClose }) {
       </aside>
     )
   }
-  if (k === 'body') {
-    const b = selected.body
+  if (i.kind === 'body') {
+    const b = i.body
     return (
       <aside className="panel map-info">
         {close}
@@ -847,8 +433,8 @@ function InfoPanel({ selected, onClose }) {
       </aside>
     )
   }
-  if (k === 'shower') {
-    const s = selected.shower
+  if (i.kind === 'shower') {
+    const s = i.shower
     return (
       <aside className="panel map-info">
         {close}
@@ -865,8 +451,8 @@ function InfoPanel({ selected, onClose }) {
       </aside>
     )
   }
-  if (k === 'small') {
-    const s = selected.s
+  if (i.kind === 'small') {
+    const s = i.s
     return (
       <aside className="panel map-info">
         {close}
@@ -886,8 +472,8 @@ function InfoPanel({ selected, onClose }) {
       </aside>
     )
   }
-  if (k === 'cosmic') {
-    const it = selected.it
+  if (i.kind === 'cosmic') {
+    const it = i.it
     return (
       <aside className="panel map-info">
         {close}

@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { allBodies, smallBodyHelio, todayUTC } from '../astro/ephemeris.js'
+import { useMemo, useRef, useState } from 'react'
+import Cosmos3D from './Cosmos3D.jsx'
+import { allBodies, smallBodyHelio, todayUTC, planetOrbitPoints, smallBodyOrbitPoints } from '../astro/ephemeris.js'
 import smallbodiesJson from '../data/smallbodies.json'
 import probesJson from '../data/probes.json'
 
-// ── helpers ──────────────────────────────────────────────────
-const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
-const P = Math.PI / 180
+const D2R = Math.PI / 180
 
 const PLANETS = [
   { id: 'mercury', name: 'Mercury', glyph: '☿', color: '#b9a89a', a: 0.387 },
@@ -37,229 +36,10 @@ const PROBE_COLORS = {
   'Juno': '#d4af37', 'Europa Clipper': '#9fc8e0', 'JUICE': '#9fc8e0',
 }
 
-const SIZE = 1000
-const C = SIZE / 2
-const SCALE = 118
-const R = (a) => Math.pow(Math.max(a, 0.01), 0.55) * SCALE
-const planetPx = (a) => Math.max(4, Math.min(16, a * 4))
-
-export default function SystemMap() {
-  const [dateStr] = useState(() => todayUTC())
-  const bodies = useMemo(() => allBodies(dateStr), [dateStr])
-  const [selected, setSelected] = useState(null)
-  const [k, setK] = useState(1)
-  const svgRef = useRef(null)
-  const dragRef = useRef(null)
-
-  // planets
-  const positions = useMemo(() => {
-    const map = {}
-    for (const p of PLANETS) {
-      const b = bodies[p.id]
-      const ang = b.helioLon * P
-      map[p.id] = { ...p, ...b, x: C + R(p.a) * Math.cos(ang), y: C + R(p.a) * Math.sin(ang) }
-    }
-    return map
-  }, [bodies])
-
-  // small bodies (true heliocentric positions)
-  const smalls = useMemo(() => {
-    return Object.entries(SMALL_KEYS).map(([key, style]) => {
-      const el = smallbodiesJson[key]
-      if (!el) return null
-      const h = smallBodyHelio(el, dateStr)
-      const ang = h.lon * P
-      return {
-        key,
-        name: el.name,
-        style,
-        kind: el.kind,
-        class: el.class,
-        period: el.period,
-        r: h.r,
-        lon: h.lon,
-        lat: h.lat,
-        x: C + R(h.r) * Math.cos(ang),
-        y: C + R(h.r) * Math.sin(ang),
-      }
-    }).filter(Boolean)
-  }, [dateStr])
-
-  // probes (snapshot from JPL Horizons)
-  const probes = useMemo(() => {
-    return probesJson.map((p) => {
-      const ang = p.lon * P
-      return {
-        ...p,
-        x: C + R(p.r) * Math.cos(ang),
-        y: C + R(p.r) * Math.sin(ang),
-        color: PROBE_COLORS[p.name] || '#d4af37',
-      }
-    })
-  }, [])
-
-  const belt = useMemo(() => {
-    const pts = []
-    for (let a = 0; a <= 360; a += 2) {
-      const r = R(2.55) + Math.sin(a * 7 * P) * 14
-      pts.push([C + r * Math.cos(a * P), C + r * Math.sin(a * P)])
-    }
-    return pts
-  }, [])
-  const kuiper = useMemo(() => {
-    const pts = []
-    for (let a = 0; a <= 360; a += 3) {
-      const r = R(42) + Math.sin(a * 5 * P) * 20
-      pts.push([C + r * Math.cos(a * P), C + r * Math.sin(a * P)])
-    }
-    return pts
-  }, [])
-
-  useEffect(() => {
-    const el = svgRef.current
-    if (!el) return
-    const onWheel = (e) => {
-      e.preventDefault()
-      setK((prev) => clamp(prev * Math.exp(-e.deltaY * 0.0015), 0.6, 8))
-    }
-    el.addEventListener('wheel', onWheel, { passive: false })
-    return () => el.removeEventListener('wheel', onWheel)
-  }, [])
-
-  const onPointerUp = (e) => {
-    dragRef.current = null
-    const rect = svgRef.current.getBoundingClientRect()
-    const ux = ((e.clientX - rect.left) / rect.width) * SIZE / k + (C - C / k)
-    const uy = ((e.clientY - rect.top) / rect.height) * SIZE / k + (C - C / k)
-    let best = null
-    let bestD = 34 / k
-    for (const p of Object.values(positions)) {
-      const d = Math.hypot(p.x - ux, p.y - uy)
-      if (d < bestD) { bestD = d; best = { kind: 'planet', p } }
-    }
-    for (const s of smalls) {
-      const d = Math.hypot(s.x - ux, s.y - uy)
-      if (d < bestD) { bestD = d; best = { kind: 'small', s } }
-    }
-    for (const p of probes) {
-      const d = Math.hypot(p.x - ux, p.y - uy)
-      if (d < bestD) { bestD = d; best = { kind: 'probe', p } }
-    }
-    setSelected(best)
-  }
-
-  const info = selected
-
-  return (
-    <div className="systemwrap">
-      <div className="maptoolbar">
-        <div className="map-search" style={{ flex: 'none' }}>
-          <span className="map-date">☉ True positions for {dateStr} · dwarf planets, asteroids & comets computed from JPL elements · spacecraft from JPL Horizons</span>
-        </div>
-        <div className="map-zoom">
-          <button onClick={() => setK(clamp(k * 1.5, 0.6, 8))}>+</button>
-          <button onClick={() => setK(clamp(k / 1.5, 0.6, 8))}>−</button>
-          <button onClick={() => { setK(1); setSelected(null) }}>⌂</button>
-        </div>
-      </div>
-
-      <div className="map-canvas system-canvas">
-        <svg
-          ref={svgRef}
-          viewBox={`0 0 ${SIZE} ${SIZE}`}
-          className="sky-svg"
-          onPointerUp={onPointerUp}
-        >
-          <defs>
-            <radialGradient id="sysbg" cx="50%" cy="50%" r="60%">
-              <stop offset="0%" stopColor="#0e1b2c" />
-              <stop offset="100%" stopColor="#060b14" />
-            </radialGradient>
-            <radialGradient id="sysSun" cx="40%" cy="35%" r="70%">
-              <stop offset="0%" stopColor="#fff3c9" />
-              <stop offset="40%" stopColor="#f2cf5b" />
-              <stop offset="100%" stopColor="#c1440e" />
-            </radialGradient>
-          </defs>
-          <g transform={`translate(${C - C * k} ${C - C * k}) scale(${k})`}>
-            <rect x={-2000} y={-2000} width={6000} height={6000} fill="url(#sysbg)" />
-
-            {PLANETS.map((p) => (
-              <circle key={p.id} cx={C} cy={C} r={R(p.a)} fill="none" stroke="rgba(212,175,55,0.2)" strokeWidth={0.8} strokeDasharray="6 6" />
-            ))}
-
-            <path d={belt.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join('') + 'Z'} fill="none" stroke="rgba(194,68,14,0.45)" strokeWidth={3} />
-            <text x={C + R(2.55)} y={C - 14} fontSize={16} fill="rgba(194,68,14,0.8)" style={{ fontFamily: `'EB Garamond', serif`, fontStyle: 'italic' }}>the asteroid belt</text>
-            <path d={kuiper.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join('') + 'Z'} fill="none" stroke="rgba(155,184,217,0.25)" strokeWidth={2.5} />
-            <text x={C} y={70} textAnchor="middle" fontSize={16} fill="rgba(155,184,217,0.6)" style={{ fontFamily: `'EB Garamond', serif`, fontStyle: 'italic' }}>the Kuiper belt</text>
-
-            {/* sun */}
-            <circle cx={C} cy={C} r={26} fill="url(#sysSun)" />
-            <circle cx={C} cy={C} r={30} fill="none" stroke="rgba(242,207,91,0.6)" strokeWidth={1.5} />
-            {Array.from({ length: 12 }).map((_, i) => {
-              const a = (i * Math.PI) / 6
-              return <line key={i} x1={C + 30 * Math.cos(a)} y1={C + 30 * Math.sin(a)} x2={C + 40 * Math.cos(a)} y2={C + 40 * Math.sin(a)} stroke="rgba(242,207,91,0.55)" strokeWidth={2} />
-            })}
-            <text x={C} y={C - 52} textAnchor="middle" fontSize={22} fill="#f2cf5b" style={{ fontFamily: `'Cinzel', serif` }}>SOL</text>
-
-            {/* small bodies */}
-            {smalls.map((s) => {
-              const r = s.style.r
-              return (
-                <g key={s.key} className="sys-planet">
-                  <circle cx={s.x} cy={s.y} r={r} fill={s.style.color} opacity={s.kind === 'comet' ? 0.9 : 0.75} stroke="rgba(10,18,32,0.9)" strokeWidth={1.2} />
-                  {s.style.comet && (
-                    <path d={`M${s.x} ${s.y} l${-r - 8} ${(r + 6) * 0.4}`} stroke="#9fe3ff" strokeWidth={1.4} fill="none" opacity={0.7} />
-                  )}
-                  <text x={s.x} y={s.y - r - 5} textAnchor="middle" fontSize={12} fill={s.style.color} style={{ fontFamily: `'EB Garamond', serif`, fontStyle: 'italic' }}>
-                    {s.kind === 'comet' ? s.name.split('/')[0] + '/' + s.name.split('/')[1]?.split(' ')[0] : s.name.split(' ').slice(-1)[0]}
-                  </text>
-                </g>
-              )
-            })}
-
-            {/* probes */}
-            {probes.map((p) => (
-              <g key={p.name} className="sys-planet">
-                <polygon
-                  points={`${p.x},${p.y - 9} ${p.x + 5},${p.y + 6} ${p.x},${p.y + 2.5} ${p.x - 5},${p.y + 6}`}
-                  fill={p.color} stroke="rgba(10,18,32,0.9)" strokeWidth={1.2}
-                />
-                <text x={p.x} y={p.y + 24} textAnchor="middle" fontSize={11} fill={p.color} style={{ fontFamily: `'Cinzel', serif` }}>
-                  {p.name}
-                </text>
-              </g>
-            ))}
-
-            {/* planets */}
-            {PLANETS.map((p) => {
-              const pos = positions[p.id]
-              const r = planetPx(p.a)
-              return (
-                <g key={p.id} className="sys-planet">
-                  <circle cx={pos.x} cy={pos.y} r={r} fill={p.color} stroke="rgba(10,18,32,0.9)" strokeWidth={1.5} />
-                  {p.id === 'saturn' && (
-                    <ellipse cx={pos.x} cy={pos.y} rx={r + 5} ry={(r + 5) * 0.45} fill="none" stroke="rgba(232,213,163,0.7)" strokeWidth={1.4} transform={`rotate(-18 ${pos.x} ${pos.y})`} />
-                  )}
-                  <text x={pos.x} y={pos.y - r - 8} textAnchor="middle" fontSize={15} fill={p.color} style={{ fontFamily: `'Cinzel', serif` }}>
-                    {p.name}
-                  </text>
-                </g>
-              )
-            })}
-          </g>
-        </svg>
-      </div>
-
-      <InfoPanel info={info} dateStr={dateStr} onClose={() => setSelected(null)} />
-    </div>
-  )
-}
-
 const NOTE = {
   mercury: 'Swift Hermes — a scorched iron world with ice in its shadowed craters.',
   venus: 'The Morning and Evening Star — a runaway greenhouse furnace under acid clouds.',
-  earth: 'Gaia, the blue marble — the only world we know that bears life.',
+  earth: 'Gaia, the blue marble — the only world we know that bears life. You are here.',
   mars: 'The red wanderer — Olympus Mons, Valles Marineris, and rovers named for the curious.',
   jupiter: 'The king of planets — 95 moons, a red spot wider than Earth, and a magnetic field that rules space.',
   saturn: 'The jewel of the heavens — rings of ice, and hidden oceans on Titan and Enceladus.',
@@ -292,70 +72,235 @@ const SMALL_NOTE = {
   Salacia: 'A large classical Kuiper belt object.',
 }
 
+const eclCart = (lon, lat, r) => ({
+  x: r * Math.cos(lat * D2R) * Math.cos(lon * D2R),
+  y: r * Math.cos(lat * D2R) * Math.sin(lon * D2R),
+  z: r * Math.sin(lat * D2R),
+})
+
+const QUICK_VIEWS = [
+  { id: 'inner', label: 'Inner', k: 28 },
+  { id: 'main', label: 'Main belt', k: 11 },
+  { id: 'giants', label: 'Giants', k: 4 },
+  { id: 'kuiper', label: 'Kuiper', k: 1.8 },
+  { id: 'all', label: 'All', k: 1 },
+]
+
+export default function SystemMap() {
+  const [dateStr] = useState(() => todayUTC())
+  const bodies = useMemo(() => allBodies(dateStr), [dateStr])
+  const [selected, setSelected] = useState(null)
+  const viewerRef = useRef(null)
+
+  // ── objects: true 3D heliocentric positions ───────────────
+  const objects = useMemo(() => {
+    const list = []
+
+    // the Sun
+    list.push({
+      id: 'sun', oid: 'sun', x: 0, y: 0, z: 0,
+      r: 8, color: '#f2cf5b', kind: 'glyph', shape: 'ring', labelK: 1.15,
+      label: 'SOL',
+      info: { kind: 'marker', name: 'The Sun', text: 'The Giver of Light — a G2V yellow dwarf at the heart of the court, holding all eight planets, the dwarf worlds, and every comet in its gravity.' },
+    })
+
+    // planets (true heliocentric position today)
+    for (const p of PLANETS) {
+      const b = bodies[p.id]
+      const pos = eclCart(b.helioLon, b.helioLat || 0, b.helioR)
+      const isEarth = p.id === 'earth'
+      list.push({
+        id: 'planet-' + p.id, oid: 'planet-' + p.id, ...pos,
+        r: Math.max(4, Math.min(15, p.a * 4)),
+        color: p.color, kind: 'glyph', shape: 'circle', labelK: 1.25,
+        label: p.name,
+        info: { kind: 'planet', p, b, isEarth, name: p.name },
+      })
+    }
+
+    // dwarf planets, asteroids, comets (true positions from JPL elements)
+    for (const [key, style] of Object.entries(SMALL_KEYS)) {
+      const el = smallbodiesJson[key]
+      if (!el) continue
+      const h = smallBodyHelio(el, dateStr)
+      const pos = eclCart(h.lon, h.lat, h.r)
+      list.push({
+        id: 'small-' + key, oid: 'small-' + key, ...pos,
+        r: style.r, color: style.color, kind: 'glyph', shape: 'circle', labelK: 2.4,
+        label: key.includes('P') ? el.name.split('/')[0] + '/' + el.name.split('/')[1]?.split(' ')[0] : el.name.split(' ').slice(-1)[0],
+        info: { kind: 'small', key, name: el.name, kind2: el.kind, class: el.class, r: h.r, lon: h.lon, lat: h.lat },
+      })
+    }
+
+    // probes (true heliocentric ecliptic vectors from JPL Horizons)
+    for (const pr of probesJson) {
+      list.push({
+        id: 'probe-' + pr.name, oid: 'probe-' + pr.name,
+        x: pr.x, y: pr.y, z: pr.z,
+        r: 5, color: PROBE_COLORS[pr.name] || '#d4af37', kind: 'glyph', shape: 'diamond', labelK: 1.9,
+        label: pr.name,
+        info: { kind: 'probe', pr, name: pr.name },
+      })
+    }
+
+    // decorative belts (no pick)
+    let seed = 7
+    const rnd = () => {
+      seed = (seed * 16807) % 2147483647
+      return seed / 2147483647
+    }
+    for (let i = 0; i < 240; i++) {
+      const r = 2.15 + rnd() * 1.25
+      const a = rnd() * 2 * Math.PI
+      const inc = (rnd() - 0.5) * 6 * D2R
+      const p = eclCart(a / D2R, inc, r)
+      list.push({ id: 'belt-' + i, ...p, r: 0.8, color: 'rgba(194,68,14,0.5)', kind: 'dot', noPick: true })
+    }
+    for (let i = 0; i < 300; i++) {
+      const r = 34 + rnd() * 24
+      const a = rnd() * 2 * Math.PI
+      const inc = (rnd() - 0.5) * 12 * D2R
+      const p = eclCart(a / D2R, inc, r)
+      list.push({ id: 'kuiper-' + i, ...p, r: 1.0, color: 'rgba(155,184,217,0.35)', kind: 'dot', noPick: true })
+    }
+    return list
+  }, [bodies, dateStr])
+
+  // ── orbit rings (real Keplerian ellipses in 3D) ────────────
+  const lines = useMemo(() => {
+    const arr = []
+    for (const p of PLANETS) {
+      arr.push({
+        id: 'orbit-' + p.id,
+        pts: planetOrbitPoints(p.id, dateStr, 96),
+        color: 'rgba(212,175,55,0.3)', width: 1, opacity: 0.5,
+      })
+    }
+    for (const key of Object.keys(SMALL_KEYS)) {
+      const el = smallbodiesJson[key]
+      if (!el) continue
+      arr.push({
+        id: 'orbit-' + key,
+        pts: smallBodyOrbitPoints(el, 96),
+        color: 'rgba(155,184,217,0.22)', width: 0.8, opacity: 0.4,
+      })
+    }
+    return arr
+  }, [dateStr])
+
+  const goQuick = (k) => {
+    viewerRef.current?.focusPoint(0, 0, 0, k)
+    setSelected(null)
+  }
+
+  return (
+    <div className="systemwrap">
+      <div className="maptoolbar">
+        <div className="map-search" style={{ flex: 'none' }}>
+          <span className="map-date">☉ True 3D positions for {dateStr} · true scale (AU)</span>
+        </div>
+        <div className="map-toggles" style={{ gap: 8 }}>
+          {QUICK_VIEWS.map((v) => (
+            <button key={v.id} className="chip gold" style={{ padding: '7px 12px', fontSize: '.66rem' }} onClick={() => goQuick(v.k)}>
+              {v.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <Cosmos3D
+        ref={viewerRef}
+        objects={objects}
+        lines={lines}
+        range={200}
+        unit="1 world unit = 1 AU · true scale"
+        view={{ rotY: -30, rotX: 18, k: 2 }}
+        onSelect={setSelected}
+        selected={selected}
+        hint="The Solar System in true 3D — planets, dwarf planets, asteroids and comets at their real computed positions for today, each with its real orbital ellipse (Kepler elements from JPL). The diamond markers are humanity's spacecraft: Voyager 1 is 171 AU out, in interstellar space. Use the quick-view buttons to fly between the inner worlds and the Kuiper belt."
+      />
+
+      <InfoPanel info={selected} dateStr={dateStr} onClose={() => setSelected(null)} />
+    </div>
+  )
+}
+
 function InfoPanel({ info, dateStr, onClose }) {
-  if (!info) {
+  if (!info || !info.info) {
     return (
       <aside className="panel map-info empty-info">
         <p className="eyebrow">The wandering court</p>
         <h3>Choose a world</h3>
         <p>
-          The planets in true positions for {dateStr}, plus dwarf planets, asteroids and comets
-          computed from JPL orbital elements, and humanity's probes — from the Sun's corona
-          (Parker) to interstellar space (Voyager 1, 171 AU away). Click anything.
+          The planets, dwarf planets, asteroids and comets in true positions for {dateStr},
+          computed from JPL orbital elements — plus humanity's probes, from the Sun's corona
+          (Parker) to interstellar space (Voyager 1, 171 AU). Click anything to fly to it.
         </p>
       </aside>
     )
   }
-  if (info.kind === 'planet') {
-    const p = info.p
-    const isEarth = p.id === 'earth'
+  const i = info.info
+  const close = <button className="info-close" onClick={onClose}>✕</button>
+
+  if (i.kind === 'planet') {
+    const { p, b, isEarth } = i
     return (
       <aside className="panel map-info">
-        <button className="info-close" onClick={onClose}>✕</button>
+        {close}
         <p className="eyebrow">{isEarth ? 'The home world' : 'A wanderer'} · {dateStr}</p>
         <h2>{p.name} <span className="ledger-ancient">{p.glyph}</span></h2>
         <dl className="info-list">
           <InfoRow k="Distance from Sun" v={isEarth ? '1.00 AU (mean)' : `${p.a} AU`} />
-          {!isEarth && <InfoRow k="Distance from Earth" v={`${p.distAU.toFixed(2)} AU · ${p.lightMin.toFixed(1)} light-min`} />}
-          <InfoRow k="Right ascension" v={fmtRA(p.ra)} />
-          <InfoRow k="Declination" v={fmtDec(p.dec)} />
-          {!isEarth && <InfoRow k="Magnitude" v={p.mag != null ? p.mag.toFixed(1) : '—'} />}
-          <InfoRow k="Heliocentric longitude" v={`${p.helioLon.toFixed(1)}°`} />
+          {!isEarth && <InfoRow k="Distance from Earth" v={`${b.distAU.toFixed(2)} AU · ${b.lightMin.toFixed(1)} light-min`} />}
+          <InfoRow k="Right ascension" v={fmtRA(b.ra)} />
+          <InfoRow k="Declination" v={fmtDec(b.dec)} />
+          {!isEarth && <InfoRow k="Magnitude" v={b.mag != null ? b.mag.toFixed(1) : '—'} />}
+          <InfoRow k="Heliocentric longitude" v={`${b.helioLon.toFixed(1)}°`} />
         </dl>
         <p className="info-note">{NOTE[p.id]}{isEarth ? ' You are standing on this world.' : ''}</p>
       </aside>
     )
   }
-  if (info.kind === 'small') {
-    const s = info.s
+  if (i.kind === 'small') {
     return (
       <aside className="panel map-info">
-        <button className="info-close" onClick={onClose}>✕</button>
-        <p className="eyebrow">{s.kind === 'comet' ? 'A wandering star · comet' : s.kind === 'dwarf' ? 'A dwarf world' : 'A minor world'} · {dateStr}</p>
-        <h2>{s.name}</h2>
+        {close}
+        <p className="eyebrow">{i.kind2 === 'comet' ? 'A wandering star · comet' : i.kind2 === 'dwarf' ? 'A dwarf world' : 'A minor world'} · {dateStr}</p>
+        <h2>{i.name}</h2>
         <dl className="info-list">
-          <InfoRow k="Kind" v={s.kind === 'comet' ? 'Comet' : s.kind === 'dwarf' ? 'Dwarf planet' : 'Asteroid'} />
-          <InfoRow k="Distance from Sun" v={`${s.r.toFixed(2)} AU`} />
-          <InfoRow k="Ecliptic longitude" v={`${s.lon.toFixed(1)}°`} />
-          <InfoRow k="Ecliptic latitude" v={`${s.lat.toFixed(1)}°`} />
+          <InfoRow k="Kind" v={i.kind2 === 'comet' ? 'Comet' : i.kind2 === 'dwarf' ? 'Dwarf planet' : 'Asteroid'} />
+          <InfoRow k="Orbit class" v={i.class || '—'} />
+          <InfoRow k="Distance from Sun" v={`${i.r.toFixed(2)} AU`} />
+          <InfoRow k="Ecliptic longitude" v={`${i.lon.toFixed(1)}°`} />
+          <InfoRow k="Ecliptic latitude" v={`${i.lat.toFixed(1)}°`} />
         </dl>
-        <p className="info-note">{SMALL_NOTE[s.key] || ''} Position computed for today from JPL orbital elements.</p>
+        <p className="info-note">{SMALL_NOTE[i.key] || ''} Position computed for today from JPL orbital elements.</p>
       </aside>
     )
   }
-  if (info.kind === 'probe') {
-    const p = info.p
+  if (i.kind === 'probe') {
+    const pr = i.pr
     return (
       <aside className="panel map-info">
-        <button className="info-close" onClick={onClose}>✕</button>
-        <p className="eyebrow">A child of Earth · position {p.epoch}</p>
-        <h2>{p.name}</h2>
+        {close}
+        <p className="eyebrow">A child of Earth · position {pr.epoch}</p>
+        <h2>{pr.name}</h2>
         <dl className="info-list">
-          <InfoRow k="Distance from Sun" v={`${p.r.toFixed(2)} AU`} />
-          <InfoRow k="Ecliptic longitude" v={`${p.lon.toFixed(1)}°`} />
-          <InfoRow k="Ecliptic latitude" v={`${p.lat.toFixed(1)}°`} />
+          <InfoRow k="Distance from Sun" v={`${pr.r.toFixed(2)} AU`} />
+          <InfoRow k="Ecliptic longitude" v={`${pr.lon.toFixed(1)}°`} />
+          <InfoRow k="Ecliptic latitude" v={`${pr.lat.toFixed(1)}°`} />
         </dl>
-        <p className="info-note">{p.note} Position from JPL Horizons (approximate — not to scale).</p>
+        <p className="info-note">{pr.note} Position from JPL Horizons.</p>
+      </aside>
+    )
+  }
+  if (i.kind === 'marker') {
+    return (
+      <aside className="panel map-info">
+        {close}
+        <p className="eyebrow">A landmark</p>
+        <h2>{i.name}</h2>
+        <p className="info-note" style={{ marginTop: 12, color: 'var(--parchment)', fontSize: '0.95rem' }}>{i.text}</p>
       </aside>
     )
   }
@@ -368,10 +313,7 @@ const fmtRA = (d) => {
   const mm = Math.floor((h - hh) * 60)
   return `${String(hh).padStart(2, '0')}h ${String(mm).padStart(2, '0')}m`
 }
-const fmtDec = (d) => {
-  const s = d < 0 ? '−' : '+'
-  return `${s}${Math.abs(d).toFixed(1)}°`
-}
+const fmtDec = (d) => `${d < 0 ? '−' : '+'}${Math.abs(d).toFixed(1)}°`
 
 function InfoRow({ k, v }) {
   return (
