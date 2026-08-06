@@ -5,12 +5,12 @@ import { ALMANAC } from '../data/lore.js'
 const ATLAS_CHIPS = [
   { id: 'sky', label: 'The Sky Tonight', path: '/atlas' },
   { id: 'system', label: 'The Solar System', path: '/atlas/system' },
+  { id: 'milkyway', label: 'The Milky Way (3D)', path: '/atlas/cosmos/milkyway' },
+  { id: 'localgroup', label: 'The Local Group (3D)', path: '/atlas/cosmos/local-group' },
+  { id: 'universe', label: 'The Observable Universe', path: '/atlas/cosmos/universe' },
+  { id: 'multiverse', label: 'The Multiverse', path: '/atlas/cosmos/multiverse' },
   { id: 'sirius', label: 'Sirius', path: '/atlas?q=Sirius' },
-  { id: 'm31', label: 'Andromeda (M31)', path: '/atlas?q=M31' },
-  { id: 'orion', label: 'Orion', path: '/atlas?q=Orion' },
-  { id: 'perseids', label: 'Perseids', path: '/atlas?q=Perseids' },
-  { id: 'jupiter', label: 'Jupiter', path: '/atlas?q=Jupiter' },
-  { id: 'europa', label: 'Europa', path: '/atlas?q=Europa' },
+  { id: 'sgra', label: 'Sagittarius A*', path: '/atlas?q=Sagittarius A*' },
 ]
 
 const REAL_STATS = [

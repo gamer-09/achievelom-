@@ -44,6 +44,27 @@ comets in their true arrangement for today (angles true, radii scaled so all wor
 fit) — plus **humanity's 10 probes in their real positions** from JPL Horizons: Voyager 1
 at 171 AU in interstellar space, Parker skimming the Sun, JWST at L2…
 
+## ✦ The Cosmos (real 3D maps — no diagrams)
+
+A third chart, **✧ The Cosmos**, climbs the great chain of scale with real data:
+
+- **The Milky Way (3D)** — 5,187 real stars with true 3D positions (HYG x/y/z in
+  parsecs), all **156 globular clusters** from the Harris catalog in real positions,
+  the Sun, and the supermassive black hole Sagittarius A* at the galactic center.
+  Drag to turn the galaxy, scroll to dive into our stellar neighbourhood.
+- **The Local Group (3D)** — ~35 real galaxies to true distances (Karachentsev &
+  extragalactic literature): the Milky Way, Andromeda, Triangulum, the Magellanic
+  Clouds, M81/M82, Centaurus A, Maffei 1 and more, clickable with their stories.
+- **The Observable Universe** — **4,824 real galaxies from the 2dF Galaxy Redshift
+  Survey** plotted at their measured distances (redshift → distance, H₀=70), forming
+  the true cosmic web, out to the cosmic microwave background at 13.8 billion light-years.
+- **The Multiverse** — honestly labeled *theory*: the ideas of eternal inflation,
+  the string landscape, quantum many-worlds, and the mathematical universe, with the
+  note that other bubbles lie forever beyond our horizon.
+
+Every view is interactive: drag to rotate, scroll to zoom, click any light for its
+dossier.
+
 ## ✦ Everything else
 
 - **The Chronicles** — live space news (Spaceflight News API) + NASA's Picture of the Day

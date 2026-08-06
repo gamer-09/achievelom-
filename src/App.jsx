@@ -8,7 +8,7 @@ import Lore from './components/Lore.jsx'
 
 const Atlas = lazy(() => import('./components/Atlas.jsx'))
 
-function AtlasLoader({ tab, query }) {
+function AtlasLoader({ tab, query, view }) {
   return (
     <Suspense
       fallback={
@@ -21,7 +21,7 @@ function AtlasLoader({ tab, query }) {
         </div>
       }
     >
-      <Atlas tab={tab} initialQuery={query} />
+      <Atlas tab={tab} initialQuery={query} view={view} />
     </Suspense>
   )
 }
@@ -32,6 +32,9 @@ function parseRoute(hash) {
   const parts = pathPart.split('/').filter(Boolean)
   if (parts[0] === 'atlas' && parts[1] === 'system') {
     return { page: 'atlas', tab: 'system', query: '' }
+  }
+  if (parts[0] === 'atlas' && parts[1] === 'cosmos') {
+    return { page: 'atlas', tab: 'cosmos', query: '', view: parts[2] || 'milkyway' }
   }
   if (parts[0] === 'atlas') {
     const q = new URLSearchParams(queryPart || '').get('q') || ''
@@ -64,7 +67,7 @@ export default function App() {
       <main>
         <ErrorBoundary>
           {route.page === 'home' && <HomePage navigate={navigate} />}
-          {route.page === 'atlas' && <AtlasLoader key={route.tab} tab={route.tab} query={route.query} />}
+          {route.page === 'atlas' && <AtlasLoader key={route.tab} tab={route.tab} query={route.query} view={route.view} />}
           {route.page === 'chronicles' && <Chronicles />}
           {route.page === 'lore' && <Lore />}
         </ErrorBoundary>
